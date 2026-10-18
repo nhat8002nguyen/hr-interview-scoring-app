@@ -1,6 +1,11 @@
+x-api-build: &api-build
+  context: .
+  dockerfile: Dockerfile.dev
+
 services:
   db:
     image: postgres:18-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -14,9 +19,9 @@ services:
       - db-data:/var/lib/postgresql
 
   migrate:
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
+    image: talot-assessment-api:local
+    build: *api-build
+    restart: "no"
     command: ["uv", "run", "--directory", "apps/api", "alembic", "upgrade", "head"]
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/talot
@@ -25,9 +30,9 @@ services:
         condition: service_healthy
 
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
+    image: talot-assessment-api:local
+    build: *api-build
+    restart: unless-stopped
     command: ["uv", "run", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "3000"]
     ports:
       - "3000:3000"
@@ -43,6 +48,16 @@ services:
       SCORING_MAX_ATTEMPTS: "3"
       SEED_HR_EMAIL: hr@talotrace.ai
       SEED_HR_PASSWORD: change-me
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3000/health', timeout=3)"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     volumes:
       - audio-data:/data/audio
     depends_on:
@@ -50,6 +65,32 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+
+  candidate-web:
+    build:
+      context: ./apps/candidate-web
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:3000
+    ports:
+      - "3001:3001"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  hr-web:
+    build:
+      context: ./apps/hr-web
+      args:
+        NEXT_PUBLIC_API_URL: http://api:3000
+    environment:
+      NEXT_PUBLIC_API_URL: http://api:3000
+    ports:
+      - "3002:3002"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   db-data:

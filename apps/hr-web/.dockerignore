@@ -1,0 +1,10 @@
+node_modules
+.next
+.env*
+e2e
+tests
+playwright-report
+test-results
+*.log
+README.md
+AGENTS.md

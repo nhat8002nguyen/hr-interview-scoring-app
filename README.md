@@ -45,7 +45,7 @@ curl -fsS localhost:3000/health
 
 The build context for both `Dockerfile.dev` and `Dockerfile` is the workspace root (`.`), not `apps/api`, because `apps/api` depends on the `libs/` workspace packages.
 
-Start everything (Postgres, migrations, API):
+Start the full stack (Postgres, migrations, API, candidate web, HR web):
 
 ```bash
 docker compose up --build
@@ -58,11 +58,18 @@ docker compose up -d --build
 ```
 
 The `migrate` service runs `alembic upgrade head` and the `api` service waits for it to finish before starting.
-After the API is up:
+The web apps start after the API is healthy.
+
+After the stack is up:
+
+- Candidate app: http://localhost:3001
+- HR app: http://localhost:3002
+- API health: http://localhost:3000/health
+
+Run the local smoke check:
 
 ```bash
-curl -fsS localhost:3000/health
-# {"status":"ok"}
+./scripts/smoke-local.sh
 ```
 
 Tear down and remove volumes:
@@ -113,7 +120,15 @@ The import is idempotent on the data pack's external refs, so re-importing does 
 | `SEED_HR_EMAIL` | seeded HR account email | `hr@talotrace.ai` | same |
 | `SEED_HR_PASSWORD` | seeded HR account password | `change-me` | same |
 
-## Related repositories
+## Full stack layout
 
-The two web apps, `apps/candidate-web` and `apps/hr-web`, live in separate repositories and are not part of this Compose file.
-Point their `NEXT_PUBLIC_API_URL` at `http://localhost:3000` to run them against this API locally.
+This repository is the monorepo for all three components:
+
+- `apps/api` - FastAPI backend on port `3000`.
+- `apps/candidate-web` - candidate Next.js app on port `3001`.
+- `apps/hr-web` - HR Next.js app on port `3002`.
+
+The local Compose file builds the candidate app with `NEXT_PUBLIC_API_URL=http://localhost:3000` because the browser calls the API directly.
+It builds the HR app with `NEXT_PUBLIC_API_URL=http://api:3000` because every HR API call is server-side inside the container.
+
+Production deployment is documented in `deploy/README.md`.
