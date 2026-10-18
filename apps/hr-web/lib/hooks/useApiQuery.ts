@@ -1,18 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { clientFetch } from "@/lib/api/client";
 
 export interface ApiQueryState<T> {
   data: T | null;
   error: string | null;
   loading: boolean;
+  refetch: () => void;
 }
 
 export function useApiQuery<T>(path: string): ApiQueryState<T> {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -33,7 +35,9 @@ export function useApiQuery<T>(path: string): ApiQueryState<T> {
     return () => {
       cancelled = true;
     };
-  }, [path]);
+  }, [path, tick]);
 
-  return { data, error, loading };
+  const refetch = useCallback(() => setTick((value) => value + 1), []);
+
+  return { data, error, loading, refetch };
 }
