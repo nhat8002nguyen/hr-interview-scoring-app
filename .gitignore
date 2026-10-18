@@ -43,3 +43,8 @@ Thumbs.db
 
 # Reference materials (scaffolding input, not product code)
 intial-resources/
+
+# Git worktrees (nested working trees)
+/talot-backend/
+/talot-candidate-web/
+/talot-hr-web/
