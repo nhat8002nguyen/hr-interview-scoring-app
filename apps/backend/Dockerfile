@@ -10,7 +10,7 @@ WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
 COPY libs ./libs
-COPY apps ./apps
+COPY src ./src
 
 RUN uv sync --frozen --no-dev --all-packages
 
@@ -29,6 +29,8 @@ WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY pyproject.toml uv.lock ./
 COPY libs ./libs
-COPY apps ./apps
+COPY src ./src
+COPY alembic.ini ./
+COPY migrations ./migrations
 
 CMD ["uv", "run", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "3000"]

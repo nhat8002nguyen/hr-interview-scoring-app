@@ -1,8 +1,9 @@
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
+
 from api.config import Settings
 from api.health.router import router
 from api.main import create_app
-from fastapi import FastAPI
-from httpx import ASGITransport, AsyncClient
 
 
 class FakeConnection:

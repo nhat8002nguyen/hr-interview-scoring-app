@@ -1,4 +1,5 @@
 import pytest
+
 from api.catalog.application.service import CatalogService, RoleWithCount
 from api.catalog.domain.entities import Question, Role
 from api.catalog.domain.exceptions import QuestionNotFoundError

@@ -9,10 +9,12 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 WORKDIR /app
 
 # Copy the workspace manifest and all source before syncing so the workspace
-# members (libs/database, libs/iam, apps/api) resolve.
+# members (libs/database, libs/iam) and the backend package resolve.
 COPY pyproject.toml uv.lock ./
 COPY libs ./libs
-COPY apps ./apps
+COPY src ./src
+COPY alembic.ini ./
+COPY migrations ./migrations
 
 RUN uv sync --frozen --all-packages --group dev
 

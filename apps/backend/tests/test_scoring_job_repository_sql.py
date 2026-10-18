@@ -1,11 +1,12 @@
 from datetime import UTC, datetime
 
+from sqlalchemy.dialects import postgresql
+
 from api.scoring.infrastructure.repository import (
     build_claim_statement,
     build_load_scoring_input_statement,
     build_record_failure_statement,
 )
-from sqlalchemy.dialects import postgresql
 
 
 def test_claim_uses_skip_locked() -> None:

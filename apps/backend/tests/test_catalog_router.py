@@ -1,12 +1,12 @@
 import pytest
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
+
 from api.catalog.application.service import RoleWithCount
 from api.catalog.domain.entities import Role as CatalogRole
 from api.catalog.domain.exceptions import QuestionNotFoundError, RoleNotFoundError
 from api.catalog.presentation.errors import register_catalog_exception_handlers
 from api.catalog.presentation.router import catalog_router
-from fastapi import FastAPI
-from httpx import ASGITransport, AsyncClient
-
 from iam import (
     ActiveUserData,
     JwtService,

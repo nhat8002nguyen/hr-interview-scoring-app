@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 import pytest
+
 from api.candidates.application.service import AnswersService, CandidatesService
 from api.candidates.domain.entities import Answer, Candidate
 from api.candidates.domain.exceptions import CandidateAlreadyExistsError

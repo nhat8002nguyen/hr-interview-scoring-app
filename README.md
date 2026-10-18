@@ -1,51 +1,18 @@
-# Talotrace Interview Scoring Backend
+# Talotrace Assessment
 
-FastAPI backend for the Talotrace interview-scoring product.
-It is a `uv` workspace with three packages: `apps/api` (the API), `libs/database`, and `libs/iam`.
+Monorepo for the Talotrace interview-scoring product.
+Each application is self-contained inside its own folder under `apps/`.
 
-The API listens on port `3000`.
-Audio files are stored under the directory given by `AUDIO_STORAGE_DIR`.
-`CORS_ORIGINS` is a comma-separated allow-list.
+## Apps
 
-## Prerequisites
+- [`apps/backend`](./apps/backend) - FastAPI backend on port `3000`.
+  It has its own `uv` workspace, `uv.lock`, Dockerfiles, migrations, and tests.
+- [`apps/candidate-web`](./apps/candidate-web) - candidate Next.js app on port `3001`.
+- [`apps/hr-web`](./apps/hr-web) - HR Next.js app on port `3002`.
 
-- Docker (with Docker Compose v2)
-- `uv` (any recent release that understands `--all-packages`)
-- Python 3.14 (required by the workspace `requires-python = ">=3.14"`)
+## Local full stack
 
-## Local development
-
-Sync the workspace, including dev dependencies:
-
-```bash
-uv sync
-```
-
-Run the test suite:
-
-```bash
-uv run pytest -q
-```
-
-Run the API locally (against an existing Postgres):
-
-```bash
-export DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/talot
-uv run --directory apps/api uvicorn api.main:app --port 3000
-```
-
-Health check:
-
-```bash
-curl -fsS localhost:3000/health
-# {"status":"ok"}
-```
-
-## Docker Compose
-
-The build context for both `Dockerfile.dev` and `Dockerfile` is the workspace root (`.`), not `apps/api`, because `apps/api` depends on the `libs/` workspace packages.
-
-Start the full stack (Postgres, migrations, API, candidate web, HR web):
+Start Postgres, migrations, the backend, and both web apps from the repository root:
 
 ```bash
 docker compose up --build
@@ -78,57 +45,9 @@ Tear down and remove volumes:
 docker compose down -v
 ```
 
-## Migrate, sign in, import flow
-
-The data-pack importer is the HR onboarding path.
-On a clean machine:
-
-1. Start the stack (`docker compose up --build`).
-   The `migrate` service applies the Alembic migrations automatically.
-2. Sign in as the seeded HR account:
-
-   ```bash
-   TOKEN=$(curl -fsS -X POST localhost:3000/auth/sign-in \
-     -H 'Content-Type: application/json' \
-     -d '{"email":"hr@talotrace.ai","password":"change-me"}' \
-     | python -c 'import sys, json; print(json.load(sys.stdin)["access_token"])')
-   ```
-
-3. Import the HR data pack (`business-systems-pack.zip`):
-
-   ```bash
-   curl -fsS -X POST localhost:3000/hr/import \
-     -H "Authorization: Bearer $TOKEN" \
-     -F "file=@path/to/business-systems-pack.zip"
-   ```
-
-The import is idempotent on the data pack's external refs, so re-importing does not duplicate questions, candidates, or answers.
-
-## Environment variables
-
-| Variable | Meaning | Default | Compose example |
-|---|---|---|---|
-| `DATABASE_URL` | asyncpg DSN | `postgresql+asyncpg://postgres:postgres@db:5432/talot` | same |
-| `JWT_SECRET` | HS256 signing secret | `dev-secret-change-me-in-production-32bytes` | `dev-secret-change-me-in-production` |
-| `CORS_ORIGINS` | comma-separated allowed origins | empty | `http://localhost:3001,http://localhost:3002` |
-| `CANDIDATE_WEB_ORIGIN` | origin used to build interview links | `http://localhost:3001` | same |
-| `DEEPSEEK_API_KEY` | LLM provider key | empty | `${DEEPSEEK_API_KEY:-}` |
-| `DEEPSEEK_MODEL` | LLM model id | `deepseek-chat` | same |
-| `AUDIO_STORAGE_DIR` | audio file directory | `/tmp/talotrace-audio` | `/data/audio` |
-| `SCORING_WORKERS` | worker pool size | `2` | `2` |
-| `SCORING_MAX_ATTEMPTS` | retry ceiling before `failed` | `3` | `3` |
-| `SEED_HR_EMAIL` | seeded HR account email | `hr@talotrace.ai` | same |
-| `SEED_HR_PASSWORD` | seeded HR account password | `change-me` | same |
-
-## Full stack layout
-
-This repository is the monorepo for all three components:
-
-- `apps/api` - FastAPI backend on port `3000`.
-- `apps/candidate-web` - candidate Next.js app on port `3001`.
-- `apps/hr-web` - HR Next.js app on port `3002`.
-
 The local Compose file builds the candidate app with `NEXT_PUBLIC_API_URL=http://localhost:3000` because the browser calls the API directly.
 It builds the HR app with `NEXT_PUBLIC_API_URL=http://api:3000` because every HR API call is server-side inside the container.
 
-Production deployment is documented in `deploy/README.md`.
+## Backend development
+
+See [`apps/backend/README.md`](./apps/backend/README.md) for local backend setup, tests, migrations, and environment variables.

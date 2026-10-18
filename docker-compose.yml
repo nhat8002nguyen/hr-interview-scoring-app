@@ -1,5 +1,5 @@
 x-api-build: &api-build
-  context: .
+  context: ./apps/backend
   dockerfile: Dockerfile.dev
 
 services:
@@ -22,7 +22,7 @@ services:
     image: talot-assessment-api:local
     build: *api-build
     restart: "no"
-    command: ["uv", "run", "--directory", "apps/api", "alembic", "upgrade", "head"]
+    command: ["uv", "run", "alembic", "upgrade", "head"]
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/talot
     depends_on:

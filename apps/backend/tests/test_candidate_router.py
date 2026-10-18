@@ -1,6 +1,9 @@
 from datetime import UTC, datetime
 from hashlib import sha256
 
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
+
 from api.candidates.application.service import SubmitResult
 from api.candidates.domain.entities import Answer, Candidate
 from api.candidates.presentation.candidate_router import candidate_router
@@ -8,9 +11,6 @@ from api.candidates.presentation.errors import register_candidates_exception_han
 from api.catalog.domain.entities import Question, Role
 from api.catalog.domain.exceptions import QuestionNotFoundError, RoleNotFoundError
 from api.catalog.presentation.errors import register_catalog_exception_handlers
-from fastapi import FastAPI
-from httpx import ASGITransport, AsyncClient
-
 from iam import register_iam_exception_handlers
 
 ROLE = Role(id=1, name="Backend Engineer")

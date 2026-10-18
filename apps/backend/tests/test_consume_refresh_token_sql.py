@@ -1,7 +1,8 @@
 from datetime import UTC, datetime
 
-from api.auth.infrastructure.refresh_token_storage import consume_refresh_token
 from sqlalchemy.dialects import postgresql
+
+from api.auth.infrastructure.refresh_token_storage import consume_refresh_token
 
 
 def test_consume_refresh_token_is_atomic_delete_returning() -> None:

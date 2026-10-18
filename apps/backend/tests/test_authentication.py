@@ -1,12 +1,12 @@
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
+
 from api.auth.application.seed import seed_hr_account
 from api.auth.application.service import AuthTokens
 from api.auth.domain.entities import User
 from api.auth.infrastructure.models import UserModel
 from api.auth.presentation.router import auth_router
-from fastapi import FastAPI
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
-
 from database import Base, create_engine, create_session_factory
 from iam import Role, UnauthorizedError, register_iam_exception_handlers
 

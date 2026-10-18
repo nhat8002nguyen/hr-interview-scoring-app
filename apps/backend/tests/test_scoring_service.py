@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from unittest.mock import ANY
 
 import pytest
+
 from api.scoring.application.service import ScoringService
 from api.scoring.domain.entities import ScoringJob
 from api.scoring.domain.exceptions import (

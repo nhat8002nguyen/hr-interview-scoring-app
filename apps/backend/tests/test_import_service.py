@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from hashlib import sha256
 
 import pytest
+
 from api.candidates.domain.entities import Answer, Candidate
 from api.catalog.application.service import RoleWithCount
 from api.catalog.domain.entities import Question, Role

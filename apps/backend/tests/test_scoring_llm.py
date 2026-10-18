@@ -2,6 +2,7 @@ import json
 
 import httpx
 import pytest
+
 from api.scoring.application.ports import LlmScore, LlmValidationError
 from api.scoring.infrastructure.llm import DeepSeekLlm
 

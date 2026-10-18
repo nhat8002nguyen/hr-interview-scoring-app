@@ -1,8 +1,9 @@
 from datetime import UTC, datetime
 
+from sqlalchemy.dialects import postgresql
+
 from api.candidates.domain.entities import Answer
 from api.candidates.infrastructure.repository import build_upsert_statement
-from sqlalchemy.dialects import postgresql
 
 
 def sample_answer() -> Answer:

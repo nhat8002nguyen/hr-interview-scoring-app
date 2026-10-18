@@ -2,6 +2,9 @@ import io
 import json
 import zipfile
 
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
+
 from api.catalog.application.service import RoleWithCount
 from api.catalog.domain.entities import Question
 from api.catalog.domain.entities import Role as CatalogRole
@@ -10,9 +13,6 @@ from api.importing.domain import InvalidImportError
 from api.importing.presentation import router as import_router_module
 from api.importing.presentation.errors import register_importing_exception_handlers
 from api.importing.presentation.router import import_router
-from fastapi import FastAPI
-from httpx import ASGITransport, AsyncClient
-
 from iam import (
     ActiveUserData,
     JwtService,

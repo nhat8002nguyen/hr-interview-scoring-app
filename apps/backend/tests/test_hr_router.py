@@ -1,5 +1,8 @@
 from datetime import UTC, datetime
 
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
+
 from api.candidates.application.ports import ScoringSnapshot
 from api.candidates.domain.entities import Answer, Candidate
 from api.candidates.domain.exceptions import AnswerNotFoundError, CandidateNotFoundError
@@ -9,9 +12,6 @@ from api.catalog.domain.entities import Question
 from api.catalog.domain.exceptions import QuestionNotFoundError
 from api.catalog.presentation.errors import register_catalog_exception_handlers
 from api.config import Settings
-from fastapi import FastAPI
-from httpx import ASGITransport, AsyncClient
-
 from iam import ActiveUserData, JwtService, Role, register_iam_exception_handlers
 
 SECRET = "test-secret-key-at-least-32-bytes"

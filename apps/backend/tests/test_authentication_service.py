@@ -1,7 +1,7 @@
 import pytest
+
 from api.auth.application.service import AuthenticationService, AuthTokens
 from api.auth.domain.entities import User
-
 from iam import ActiveUserData, JwtService, Role, UnauthorizedError
 
 SECRET = "test-secret-key-at-least-32-bytes"

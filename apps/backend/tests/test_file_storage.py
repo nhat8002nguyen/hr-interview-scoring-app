@@ -1,4 +1,5 @@
 import pytest
+
 from api.candidates.infrastructure.storage import LocalFileStorage
 
 

@@ -1,6 +1,9 @@
 from datetime import UTC, datetime
 
 import pytest
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
+
 from api.candidates.domain.entities import Answer
 from api.candidates.domain.exceptions import AnswerNotFoundError
 from api.catalog.domain.entities import Question
@@ -12,9 +15,6 @@ from api.scoring.domain.exceptions import (
 )
 from api.scoring.presentation.errors import register_scoring_exception_handlers
 from api.scoring.presentation.router import scoring_router
-from fastapi import FastAPI
-from httpx import ASGITransport, AsyncClient
-
 from iam import ActiveUserData, JwtService, Role, register_iam_exception_handlers
 
 SECRET = "test-secret-key-at-least-32-bytes"

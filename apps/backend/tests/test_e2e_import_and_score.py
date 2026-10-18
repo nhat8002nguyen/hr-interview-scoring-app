@@ -19,12 +19,15 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+import asyncpg
+import pytest
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 import api.auth.infrastructure.models  # noqa: F401 - register UserModel, RefreshTokenModel
 import api.candidates.infrastructure.models  # noqa: F401 - register CandidateModel, AnswerModel
 import api.catalog.infrastructure.models  # noqa: F401 - register RoleModel, QuestionModel
 import api.scoring.infrastructure.models  # noqa: F401 - register ScoringJobModel
-import asyncpg
-import pytest
 from api.candidates.application.service import AnswersService, CandidatesService
 from api.candidates.infrastructure.models import AnswerModel, CandidateModel
 from api.candidates.infrastructure.storage import LocalFileStorage
@@ -38,9 +41,6 @@ from api.scoring.application.service import ScoringService
 from api.scoring.application.worker import ScoringWorker
 from api.scoring.infrastructure.models import ScoringJobModel
 from api.scoring.infrastructure.unit_of_work import SqlAlchemyScoringUnitOfWork
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
 from database import Base, create_engine, create_session_factory
 
 _PACK_DIR = (
