@@ -1,8 +1,8 @@
 import { cookies } from "next/headers";
 import type { SessionStore } from "@/lib/api/server";
+import { ACCESS_COOKIE_NAME, REFRESH_COOKIE_NAME } from "./constants";
 
-export const ACCESS_COOKIE_NAME = "hr_access";
-export const REFRESH_COOKIE_NAME = "hr_refresh";
+export { ACCESS_COOKIE_NAME, REFRESH_COOKIE_NAME };
 
 const COOKIE_OPTIONS = {
   httpOnly: true,
