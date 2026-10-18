@@ -1,7 +1,7 @@
 # Talotrace Candidate Web - Design Spec
 
 **Date:** 2026-10-18
-**Status:** Draft
+**Status:** Accepted
 **App:** `talot-candidate-web` (Next.js 16 App Router)
 **Depends on:** `docs/superpowers/specs/2026-10-18-api-contract-design.md` (Accepted)
 **Sibling specs:** Frontend - HR area, Backend service
