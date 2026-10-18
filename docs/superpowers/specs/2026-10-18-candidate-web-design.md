@@ -58,7 +58,7 @@ It talks to the FastAPI monolith (`apps/api`) over JSON HTTP.
 |---|---|
 | Framework | Next.js 16 App Router, TypeScript (strict), Tailwind CSS v4. |
 | Auth model | No credentials. Token extracted from `/interview/[token]` route and sent as `X-Candidate-Token` on every API call. |
-| API calls | Direct client-side fetch against `NEXT_PUBLIC_API_ORIGIN` (no BFF). |
+| API calls | Direct client-side fetch against `NEXT_PUBLIC_API_URL` (no BFF). |
 | Input per question | Type / Upload audio toggle; one answer per question (text XOR audio). |
 | Navigation | Linear wizard, one question at a time, with Previous / Next and a progress indicator. |
 | Resume | Exact question persisted to `localStorage` keyed by token; restore on load (see §7). |
@@ -99,7 +99,7 @@ app/
 
 Behavior:
 
-- Every call sets the `X-Candidate-Token` header and uses `NEXT_PUBLIC_API_ORIGIN` as the base.
+- Every call sets the `X-Candidate-Token` header and uses `NEXT_PUBLIC_API_URL` as the base.
 - Text submits send JSON `{ answer_type: "text", text }`.
 - Audio submits send `multipart/form-data` with a `file` field (built from a `File` object).
 - Non-2xx responses are parsed into a typed `ApiError` carrying `status` and the RFC 7807 `detail`.
@@ -179,7 +179,7 @@ The `401` invalid-link screen and basic inline errors are kept in phase 1 for co
 
 | Variable | Purpose |
 |---|---|
-| `NEXT_PUBLIC_API_ORIGIN` | FastAPI base URL (must be `NEXT_PUBLIC_` for client-side use). |
+| `NEXT_PUBLIC_API_URL` | FastAPI base URL (must be `NEXT_PUBLIC_` for client-side use). |
 
 Note for the backend/ops: the API's `CORS_ORIGINS` must include this app's origin so browser requests from the candidate area succeed.
 
@@ -222,5 +222,5 @@ talot-candidate-web/
 ├── next.config.ts
 ├── tsconfig.json
 ├── package.json
-└── .env.example        # NEXT_PUBLIC_API_ORIGIN
+└── .env.example        # NEXT_PUBLIC_API_URL
 ```

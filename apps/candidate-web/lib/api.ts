@@ -7,7 +7,7 @@ import type {
 
 export { ApiError } from "./types";
 
-const API_ORIGIN = process.env.NEXT_PUBLIC_API_ORIGIN ?? "";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
 
 function tokenHeaders(token: string): Record<string, string> {
   return { "X-Candidate-Token": token };
@@ -32,7 +32,7 @@ async function request<T>(response: Promise<Response>): Promise<T> {
 
 export async function getInterview(token: string): Promise<InterviewResponse> {
   return request(
-    fetch(`${API_ORIGIN}/candidate/interview`, { headers: tokenHeaders(token) }),
+    fetch(`${API_URL}/candidate/interview`, { headers: tokenHeaders(token) }),
   );
 }
 
@@ -42,7 +42,7 @@ export async function submitTextAnswer(
   text: string,
 ): Promise<SubmitResponse> {
   return request(
-    fetch(`${API_ORIGIN}/candidate/interview/answers/${questionId}`, {
+    fetch(`${API_URL}/candidate/interview/answers/${questionId}`, {
       method: "POST",
       headers: {
         ...tokenHeaders(token),
@@ -62,7 +62,7 @@ export async function submitAudioAnswer(
   form.append("file", file);
 
   return request(
-    fetch(`${API_ORIGIN}/candidate/interview/answers/${questionId}/audio`, {
+    fetch(`${API_URL}/candidate/interview/answers/${questionId}/audio`, {
       method: "POST",
       headers: tokenHeaders(token),
       body: form,
