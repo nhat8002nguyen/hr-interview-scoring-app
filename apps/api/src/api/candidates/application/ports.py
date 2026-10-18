@@ -1,8 +1,27 @@
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Protocol, Self
 
 from api.candidates.domain.repositories import AnswerRepository, CandidateRepository
+
+
+@dataclass(frozen=True, slots=True)
+class ScoringSnapshot:
+    status: str
+    suggested_score: int | None
+    suggested_reasoning: str | None
+    final_score: int | None
+    override_reason: str | None
+    overridden_by: int | None
+    attempt_count: int
+    last_error: str | None
+    scored_at: datetime | None
+
+
+class ScoringReader(Protocol):
+    async def get_snapshot(self, answer_id: int) -> ScoringSnapshot | None: ...
 
 
 class ScoringJobPort(Protocol):

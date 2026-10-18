@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from api.catalog.application.ports import CatalogUnitOfWorkFactory, RoleCandidateCounter
 from api.catalog.domain.entities import Question, Role
-from api.catalog.domain.exceptions import QuestionNotFoundError
+from api.catalog.domain.exceptions import QuestionNotFoundError, RoleNotFoundError
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +41,13 @@ class CatalogService:
         if question is None:
             raise QuestionNotFoundError(question_id)
         return question
+
+    async def get_role(self, role_id: int) -> Role:
+        async with self._uow_factory() as uow:
+            role = await uow.roles.get(role_id)
+        if role is None:
+            raise RoleNotFoundError(role_id)
+        return role
 
     async def ensure_role(self, name: str) -> Role:
         async with self._uow_factory() as uow:
