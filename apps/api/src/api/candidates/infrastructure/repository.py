@@ -148,10 +148,12 @@ class SqlAlchemyAnswerRepository:
 
     async def _get_active_row(self, candidate_id: int, question_id: int) -> AnswerModel | None:
         return await self._session.scalar(
-            select(AnswerModel).where(
+            select(AnswerModel)
+            .where(
                 AnswerModel.candidate_id == candidate_id,
                 AnswerModel.question_id == question_id,
             )
+            .execution_options(populate_existing=True)
         )
 
     def _to_answer(self, row: AnswerModel) -> Answer:
