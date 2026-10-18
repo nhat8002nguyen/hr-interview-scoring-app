@@ -390,3 +390,33 @@ async def test_import_malformed_answer_raises(answer_payload: dict[str, object])
 
     with pytest.raises(InvalidImportError):
         await service.import_zip(_zip_bytes(files))
+
+
+async def test_import_empty_transcript_is_text_answer() -> None:
+    service, _, _, answers, _ = _service()
+    files = {
+        "questions.md": QUESTIONS_MD.encode("utf-8"),
+        "pipeline_log.csv": PIPELINE_CSV.encode("utf-8"),
+        "answers/A007.json": json.dumps(
+            {
+                "answer_id": "A007",
+                "candidate_id": "C2041",
+                "role": "Backend Engineer",
+                "question_id": "Q1",
+                "submitted_at": "2026-09-14T10:15:00",
+                "transcript": "",
+            }
+        ).encode("utf-8"),
+    }
+
+    summary = await service.import_zip(_zip_bytes(files))
+
+    assert summary.answers_imported == 1
+    assert summary.scoring_jobs_queued == 1
+    assert summary.audio_answers_needing_person == 0
+
+    imported = answers.answers["A007"]
+    assert imported.answer_type == "text"
+    assert imported.text == ""
+    assert imported.audio_key is None
+    assert imported.content_hash == sha256(b"").hexdigest()
