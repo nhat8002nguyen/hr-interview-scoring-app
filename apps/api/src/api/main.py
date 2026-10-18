@@ -122,6 +122,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             yield
         finally:
             stop_event.set()
+            for worker in workers:
+                worker.cancel()
             await asyncio.gather(*workers, return_exceptions=True)
             await llm.aclose()
             await engine.dispose()
