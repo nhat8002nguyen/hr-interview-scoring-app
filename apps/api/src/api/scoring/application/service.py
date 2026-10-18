@@ -74,3 +74,7 @@ class ScoringService:
             if job.status != "failed":
                 raise ScoringJobInvalidTransitionError(job_id, job.status)
             return await uow.scoring_jobs.mark_retried(job_id, now=datetime.now(UTC))
+
+    async def reset_stale_claims(self, before: datetime) -> int:
+        async with self._uow_factory() as uow:
+            return await uow.scoring_jobs.reset_stale_claims(before)

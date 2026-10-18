@@ -1,8 +1,9 @@
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.auth.domain.entities import User
 from api.auth.infrastructure.models import UserModel
+from database import UnitOfWork
 from iam import Role
 
 
@@ -35,3 +36,22 @@ class SqlAlchemyUserRepository:
             password_hash=row.password_hash,
             role=Role(row.role),
         )
+
+
+class TransactionalUserRepository:
+    """Runs each repository operation in its own committed transaction."""
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._session_factory = session_factory
+
+    async def add(self, user: User) -> User:
+        async with UnitOfWork(self._session_factory) as uow:
+            return await SqlAlchemyUserRepository(uow.session).add(user)
+
+    async def get(self, user_id: int) -> User | None:
+        async with UnitOfWork(self._session_factory) as uow:
+            return await SqlAlchemyUserRepository(uow.session).get(user_id)
+
+    async def get_by_email(self, email: str) -> User | None:
+        async with UnitOfWork(self._session_factory) as uow:
+            return await SqlAlchemyUserRepository(uow.session).get_by_email(email)

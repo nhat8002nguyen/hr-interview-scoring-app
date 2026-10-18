@@ -37,6 +37,7 @@ dev = [
 target-version = "py314"
 line-length = 100
 src = ["libs", "apps"]
+extend-exclude = ["**/migrations/**"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
