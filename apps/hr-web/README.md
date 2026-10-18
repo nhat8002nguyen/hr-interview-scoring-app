@@ -1,36 +1,66 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Talotrace HR Web
 
-## Getting Started
+The HR area for the Talotrace interview-scoring app.
+HR signs in, browses candidates per role, sees each answer with the LLM's suggested score and reasoning, overrides scores with a required reason, watches scoring jobs, retries failures, imports the data pack, and creates candidates.
 
-First, run the development server:
+## Prerequisites
+
+- Node.js 20.9+
+- A running Talotrace API (`apps/api`, FastAPI) backed by PostgreSQL, per the accepted API contract.
+- The data pack imported, or available to import through the UI.
+
+## Configuration
+
+Copy the example env file and point it at the API:
+
+```bash
+cp .env.example .env.local
+# API_ORIGIN=http://localhost:8000
+```
+
+`API_ORIGIN` is server-only.
+Tokens never reach browser JavaScript; the app holds them in httpOnly cookies.
+
+## Setup
+
+```bash
+npm install
+```
+
+## Run
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000 and sign in with the seeded HR account.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Test
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Unit and component tests:
 
-## Learn More
+```bash
+npm test
+```
 
-To learn more about Next.js, take a look at the following resources:
+End-to-end tests, which require the running API and a seeded data pack:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npx playwright install
+npx playwright test
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Optional E2E environment variables: `E2E_HR_EMAIL`, `E2E_HR_PASSWORD`, `E2E_PACK_ZIP`, `API_ORIGIN`, `PORT`.
 
-## Deploy on Vercel
+## Architecture
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- Next.js 16 App Router, TypeScript, Tailwind CSS v4.
+- Backend-for-frontend: the browser only talks to same-origin `/api/*` route handlers.
+- The route handlers read the `hr_access` cookie, attach it as a Bearer token, and call the FastAPI API.
+- On `401` they rotate the refresh token once (single-flight) and retry.
+- Pages are client components that fetch `/api/*` and render loading, empty, and error states.
+- Pages: `/sign-in`, `/roles`, `/roles/[roleId]`, `/candidates/[candidateId]`, `/candidates/new`, `/answers/[answerId]`, `/scoring-jobs`, `/import`.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Not built (phase 2)
+
+Score-agreement reporting, audio transcription, a curated "needs a person" list, candidate ordering, and a deployed demo.
