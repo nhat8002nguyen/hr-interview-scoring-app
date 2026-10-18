@@ -60,3 +60,8 @@ intial-resources/
 
 # SDD scratch
 .superpowers/
+
+# Git worktrees (nested working trees)
+/talot-backend/
+/talot-candidate-web/
+/talot-hr-web/
