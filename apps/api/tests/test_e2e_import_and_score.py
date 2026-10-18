@@ -44,7 +44,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from database import Base, create_engine, create_session_factory
 
 _PACK_DIR = (
-    Path(__file__).resolve().parents[3].parent / "intial-resources" / "business-systems-pack"
+    Path(__file__).resolve().parents[3] / "intial-resources" / "business-systems-pack"
 )
 
 _POSTGRES_USER = "postgres"
@@ -200,6 +200,9 @@ async def test_import_and_score_end_to_end(
     tmp_path: Path,
     postgres_container: _PostgresContainer,
 ) -> None:
+    if not _PACK_DIR.is_dir():
+        pytest.skip("business-systems-pack not present; skipping data-pack E2E")
+
     await _wait_until_ready(postgres_container)
 
     engine = create_engine(postgres_container.url)
