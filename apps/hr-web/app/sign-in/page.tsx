@@ -17,11 +17,15 @@ export default function SignInPage() {
     setError(null);
     setSubmitting(true);
     try {
-      await clientFetch("/api/auth/sign-in", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
+      await clientFetch(
+        "/api/auth/sign-in",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        },
+        { redirectOn401: false },
+      );
       router.push("/roles");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign-in failed");

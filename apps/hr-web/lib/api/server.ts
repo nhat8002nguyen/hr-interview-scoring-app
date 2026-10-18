@@ -29,10 +29,20 @@ export class ApiError extends Error {
   }
 }
 
+interface RefreshedTokens {
+  access: string;
+  refresh: string;
+}
+
 interface RefreshResponse {
   access_token: string;
   refresh_token: string;
 }
+
+// Module-scoped so every route handler's client shares one rotation per
+// session. Keyed by the refresh token so concurrent requests from the same
+// browser coalesce without conflating different sessions.
+const refreshInFlight = new Map<string, Promise<RefreshedTokens>>();
 
 async function extractDetail(response: Response): Promise<string> {
   try {
@@ -44,26 +54,7 @@ async function extractDetail(response: Response): Promise<string> {
 }
 
 export function createApiClient(store: SessionStore, baseUrl: string): ApiClient {
-  let refreshInFlight: Promise<void> | null = null;
-
-  async function refresh(staleToken: string | null): Promise<void> {
-    // Another caller may already have rotated the token while this request
-    // was in flight. If so, the retry will pick up the new token for free.
-    if ((await store.getAccessToken()) !== staleToken) return;
-
-    if (!refreshInFlight) {
-      refreshInFlight = doRefresh().finally(() => {
-        refreshInFlight = null;
-      });
-    }
-    await refreshInFlight;
-  }
-
-  async function doRefresh(): Promise<void> {
-    const refreshToken = await store.getRefreshToken();
-    if (!refreshToken) {
-      throw new ApiError(401, "Session expired");
-    }
+  async function doRefresh(refreshToken: string): Promise<RefreshedTokens> {
     const response = await fetch(`${baseUrl}/auth/refresh-tokens`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -75,14 +66,38 @@ export function createApiClient(store: SessionStore, baseUrl: string): ApiClient
     }
     const data = (await response.json()) as RefreshResponse;
     await store.setTokens(data.access_token, data.refresh_token);
+    return { access: data.access_token, refresh: data.refresh_token };
+  }
+
+  async function refresh(staleToken: string): Promise<RefreshedTokens> {
+    // Another request may already have rotated this request's cookie view.
+    const current = await store.getAccessToken();
+    if (current && current !== staleToken) {
+      const refreshToken = await store.getRefreshToken();
+      return { access: current, refresh: refreshToken ?? "" };
+    }
+
+    const refreshToken = await store.getRefreshToken();
+    if (!refreshToken) {
+      throw new ApiError(401, "Session expired");
+    }
+
+    let pending = refreshInFlight.get(refreshToken);
+    if (!pending) {
+      pending = doRefresh(refreshToken).finally(() => {
+        refreshInFlight.delete(refreshToken);
+      });
+      refreshInFlight.set(refreshToken, pending);
+    }
+    return pending;
   }
 
   async function send(
     method: HttpMethod,
     path: string,
-    init?: ApiRequestInit,
+    init: ApiRequestInit | undefined,
+    accessToken: string | null,
   ): Promise<Response> {
-    const accessToken = await store.getAccessToken();
     const headers: Record<string, string> = {};
     if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
 
@@ -103,13 +118,13 @@ export function createApiClient(store: SessionStore, baseUrl: string): ApiClient
     init?: ApiRequestInit,
   ): Promise<Response> {
     const tokenUsed = await store.getAccessToken();
-    let response = await send(method, path, init);
+    let response = await send(method, path, init, tokenUsed);
 
     // Only a request that carried a token can be recovered by refreshing.
     // Sign-in, which carries none, surfaces the upstream 401 unchanged.
     if (response.status === 401 && tokenUsed) {
-      await refresh(tokenUsed);
-      response = await send(method, path, init);
+      const refreshed = await refresh(tokenUsed);
+      response = await send(method, path, init, refreshed.access);
     }
 
     if (!response.ok) {
@@ -119,11 +134,7 @@ export function createApiClient(store: SessionStore, baseUrl: string): ApiClient
     return response;
   }
 
-  async function request<T>(
-    method: HttpMethod,
-    path: string,
-    init?: ApiRequestInit,
-  ): Promise<T> {
+  async function request<T>(method: HttpMethod, path: string, init?: ApiRequestInit): Promise<T> {
     const response = await requestRaw(method, path, init);
     if (response.status === 204) return undefined as T;
     return (await response.json()) as T;

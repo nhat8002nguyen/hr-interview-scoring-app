@@ -70,8 +70,12 @@ describe("createApiClient", () => {
     expect(error).toMatchObject({ status: 404, detail: "answer not found" });
   });
 
-  it("rotates the refresh token only once under concurrent 401s", async () => {
-    const store = memoryStore("expired", "refresh-token");
+  it("rotates the refresh token only once under concurrent 401s across clients", async () => {
+    // In production every route handler builds its own client and its own
+    // request-scoped session store, so two concurrent browser requests are
+    // two clients sharing the same refresh cookie value.
+    const storeA = memoryStore("expired", "refresh-token");
+    const storeB = memoryStore("expired", "refresh-token");
     let refreshCalls = 0;
     let validAccess = "valid-token";
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
@@ -93,8 +97,12 @@ describe("createApiClient", () => {
       return new Response(JSON.stringify({}), { status: 401 });
     });
     vi.stubGlobal("fetch", fetchMock);
-    const client = createApiClient(store, "http://api");
-    await Promise.all([client.request("GET", "/hr/roles"), client.request("GET", "/hr/roles")]);
+    const clientA = createApiClient(storeA, "http://api");
+    const clientB = createApiClient(storeB, "http://api");
+    await Promise.all([
+      clientA.request("GET", "/hr/roles"),
+      clientB.request("GET", "/hr/roles"),
+    ]);
     expect(refreshCalls).toBe(1);
   });
 });

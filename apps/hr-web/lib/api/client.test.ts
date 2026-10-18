@@ -23,4 +23,20 @@ describe("clientFetch", () => {
     expect(error).toBeInstanceOf(ClientError);
     expect(error).toMatchObject({ status: 404, detail: "oops" });
   });
+
+  it("surfaces the 401 detail without redirecting when redirectOn401 is false", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ detail: "Invalid credentials" }), { status: 401 }),
+      ),
+    );
+    const error = await clientFetch(
+      "/api/auth/sign-in",
+      { method: "POST" },
+      { redirectOn401: false },
+    ).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ClientError);
+    expect(error).toMatchObject({ status: 401, detail: "Invalid credentials" });
+  });
 });

@@ -12,10 +12,19 @@ export class ClientError extends Error {
   }
 }
 
-export async function clientFetch<T>(path: string, init?: RequestInit): Promise<T> {
+export interface ClientFetchOptions {
+  /** Defaults to true. Set false for auth endpoints where 401 means bad credentials. */
+  redirectOn401?: boolean;
+}
+
+export async function clientFetch<T>(
+  path: string,
+  init?: RequestInit,
+  options?: ClientFetchOptions,
+): Promise<T> {
   const response = await fetch(path, init);
 
-  if (response.status === 401) {
+  if (response.status === 401 && options?.redirectOn401 !== false) {
     if (typeof window !== "undefined") {
       window.location.assign("/sign-in");
     }
