@@ -1,0 +1,19 @@
+FROM python:3.14-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    UV_LINK_MODE=copy
+
+# Install uv.
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+WORKDIR /app
+
+# Copy the workspace manifest and all source before syncing so the workspace
+# members (libs/database, libs/iam, apps/api) resolve.
+COPY pyproject.toml uv.lock ./
+COPY libs ./libs
+COPY apps ./apps
+
+RUN uv sync --frozen --all-packages --group dev
+
+CMD ["uv", "run", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "3000"]

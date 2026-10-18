@@ -9,7 +9,7 @@ from iam import JwtSettings
 class Settings(JwtSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
-    database_url: str = "postgresql+asyncpg://postgres:postgres@api-db:5432/talotrace"
+    database_url: str = "postgresql+asyncpg://postgres:postgres@db:5432/talot"
     candidate_web_origin: str = "http://localhost:3001"
     cors_origins: Annotated[list[str], NoDecode] = []
     scoring_workers: int = 2
