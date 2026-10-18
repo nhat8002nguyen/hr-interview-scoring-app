@@ -59,7 +59,7 @@ Endpoint paths, request/response shapes, status codes, and the scoring status mo
 - The HR browser only ever talks to `apps/hr-web` on its own origin.
 - The JWT access token and refresh token never reach browser JavaScript.
 - `apps/hr-web` route handlers read the access cookie, attach it as a Bearer token, and call the FastAPI monolith.
-- The FastAPI base URL is a server-side environment variable (`API_ORIGIN`), never exposed to the client.
+- The FastAPI base URL is provided via `NEXT_PUBLIC_API_URL` and read only by the server-side route handlers.
 
 ## 4. Locked Decisions
 
@@ -144,7 +144,7 @@ It is an internal step in the route-handler wrapper.
 
 A single server-side module (`lib/api/server.ts`) owns all FastAPI interaction.
 
-- `request<T>(method, path, body?)` reads `hr_access`, calls `{API_ORIGIN}{path}` with `Authorization: Bearer`, and parses the response.
+- `request<T>(method, path, body?)` reads `hr_access`, calls `{NEXT_PUBLIC_API_URL}{path}` with `Authorization: Bearer`, and parses the response.
 - On `401`, it performs a single-flight refresh (section 5.2), rewrites cookies, and retries once.
 - On any other error, it throws a typed `ApiError` carrying the RFC 7807 `status` and `detail`.
 - Every route handler delegates to this module; no route handler makes a raw `fetch` of its own.
@@ -208,7 +208,7 @@ A `409` duplicate email is shown inline.
 
 ## 11. Cross-Cutting Concerns
 
-- **Config (env):** `API_ORIGIN` (server-only FastAPI base URL). No `NEXT_PUBLIC_*` secret or URL is exposed.
+- **Config (env):** `NEXT_PUBLIC_API_URL` (FastAPI base URL, read server-side). Tokens are never exposed to the browser.
 - **CORS:** not required between the HR browser and `apps/hr-web` (same-origin).
   The API's own `CORS_ORIGINS` allow-list is unchanged.
 - **Validation:** zod schemas for the override, create-candidate, and import forms.

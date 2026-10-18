@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const PORT = Number(process.env.PORT ?? 3000);
+const PORT = 3002;
 
 export default defineConfig({
   testDir: "./e2e",
@@ -19,7 +19,8 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     env: {
-      API_ORIGIN: process.env.API_ORIGIN ?? "http://localhost:8000",
+      NEXT_PUBLIC_API_URL:
+        process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000",
     },
   },
 });

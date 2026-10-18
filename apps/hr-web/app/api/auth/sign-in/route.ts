@@ -20,7 +20,10 @@ export async function POST(request: NextRequest) {
 
   try {
     const store = createNextSessionStore();
-    const client = createApiClient(store, process.env.API_ORIGIN ?? "");
+    const client = createApiClient(
+      store,
+      process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000",
+    );
     const auth = await client.request<AuthResponse>("POST", "/auth/sign-in", {
       body: parsed.data,
     });

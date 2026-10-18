@@ -15,10 +15,10 @@ Copy the example env file and point it at the API:
 
 ```bash
 cp .env.example .env.local
-# API_ORIGIN=http://localhost:8000
+# NEXT_PUBLIC_API_URL=http://localhost:3000
 ```
 
-`API_ORIGIN` is server-only.
+`NEXT_PUBLIC_API_URL` is read by the server-side route handlers.
 Tokens never reach browser JavaScript; the app holds them in httpOnly cookies.
 
 ## Setup
@@ -33,7 +33,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000 and sign in with the seeded HR account.
+Open http://localhost:3002 and sign in with the seeded HR account.
 
 ## Test
 
@@ -50,7 +50,7 @@ npx playwright install
 npx playwright test
 ```
 
-Optional E2E environment variables: `E2E_HR_EMAIL`, `E2E_HR_PASSWORD`, `E2E_PACK_ZIP`, `API_ORIGIN`, `PORT`.
+Optional E2E environment variables: `E2E_HR_EMAIL`, `E2E_HR_PASSWORD`, `E2E_PACK_ZIP`, `NEXT_PUBLIC_API_URL`.
 
 ## Architecture
 

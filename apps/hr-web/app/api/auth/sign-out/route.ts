@@ -5,7 +5,10 @@ import { createNextSessionStore } from "@/lib/auth/session";
 export async function POST() {
   const store = createNextSessionStore();
   const refreshToken = await store.getRefreshToken();
-  const client = createApiClient(store, process.env.API_ORIGIN ?? "");
+  const client = createApiClient(
+    store,
+    process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000",
+  );
 
   try {
     await client.request("POST", "/auth/sign-out", {

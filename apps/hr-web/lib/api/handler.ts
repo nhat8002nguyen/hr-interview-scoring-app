@@ -4,7 +4,10 @@ import { problemResponse } from "@/lib/api/error";
 import { createNextSessionStore } from "@/lib/auth/session";
 
 export function apiClient(): ApiClient {
-  return createApiClient(createNextSessionStore(), process.env.API_ORIGIN ?? "");
+  return createApiClient(
+    createNextSessionStore(),
+    process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000",
+  );
 }
 
 export async function jsonResult<T>(
