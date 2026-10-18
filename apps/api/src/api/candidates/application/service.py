@@ -174,6 +174,10 @@ class AnswersService:
         async with self._uow_factory() as uow:
             return await uow.answers.list_for_candidate(candidate_id)
 
+    async def get_by_external_ref(self, ref: str) -> Answer | None:
+        async with self._uow_factory() as uow:
+            return await uow.answers.get_by_external_ref(ref)
+
     async def get_active(self, candidate_id: int, question_id: int) -> Answer | None:
         async with self._uow_factory() as uow:
             return await uow.answers.get_active(candidate_id, question_id)
