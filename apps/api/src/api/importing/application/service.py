@@ -93,20 +93,32 @@ def _parse_questions(markdown: str) -> tuple[list[_QuestionSpec], list[str]]:
 
 def _parse_pipeline(csv_text: str) -> dict[str, tuple[str, str, str]]:
     pipeline: dict[str, tuple[str, str, str]] = {}
-    for row in csv.DictReader(io.StringIO(csv_text)):
-        candidate_id = (row.get("candidate_id") or "").strip()
-        if not candidate_id:
-            continue
-        pipeline[candidate_id] = (
-            (row.get("candidate_name") or "").strip(),
-            (row.get("candidate_email") or "").strip(),
-            (row.get("role") or "").strip(),
-        )
+    try:
+        for row in csv.DictReader(io.StringIO(csv_text)):
+            candidate_id = (row.get("candidate_id") or "").strip()
+            if not candidate_id:
+                continue
+            pipeline[candidate_id] = (
+                (row.get("candidate_name") or "").strip(),
+                (row.get("candidate_email") or "").strip(),
+                (row.get("role") or "").strip(),
+            )
+    except csv.Error as exc:
+        raise InvalidImportError("malformed pipeline_log.csv") from exc
     return pipeline
 
 
+def _required(payload: dict[str, object], key: str) -> object:
+    if key not in payload:
+        raise InvalidImportError(f"answer record missing required field {key!r}")
+    return payload[key]
+
+
 def _parse_submitted_at(value: object) -> datetime:
-    parsed = datetime.fromisoformat(str(value))
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except ValueError as exc:
+        raise InvalidImportError(f"invalid submitted_at value {value!r}") from exc
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=UTC)
     return parsed
@@ -124,15 +136,23 @@ def _read_pack(data: bytes) -> tuple[str, str, list[_AnswerRecord]]:
             if member not in names:
                 raise InvalidImportError(f"missing required member {member!r}")
 
-        questions_md = archive.read("questions.md").decode("utf-8")
-        pipeline_csv = archive.read("pipeline_log.csv").decode("utf-8")
+        try:
+            questions_md = archive.read("questions.md").decode("utf-8")
+            pipeline_csv = archive.read("pipeline_log.csv").decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise InvalidImportError("pack text members must be UTF-8") from exc
 
         answer_members = sorted(
             name for name in names if name.startswith("answers/") and name.endswith(".json")
         )
         records: list[_AnswerRecord] = []
         for name in answer_members:
-            payload = json.loads(archive.read(name).decode("utf-8"))
+            try:
+                payload = json.loads(archive.read(name).decode("utf-8"))
+            except ValueError as exc:
+                raise InvalidImportError(f"malformed answer member {name!r}") from exc
+            if not isinstance(payload, dict):
+                raise InvalidImportError(f"answer member {name!r} must be a JSON object")
             audio_bytes: bytes | None = None
             audio_file = payload.get("audio_file")
             if audio_file:
@@ -219,10 +239,10 @@ class ImportService:
 
         for record in records:
             payload = record.payload
-            answer_id = str(payload["answer_id"])
-            candidate_ref = str(payload["candidate_id"])
-            question_code = str(payload["question_id"])
-            submitted_at = _parse_submitted_at(payload["submitted_at"])
+            answer_id = str(_required(payload, "answer_id"))
+            candidate_ref = str(_required(payload, "candidate_id"))
+            question_code = str(_required(payload, "question_id"))
+            submitted_at = _parse_submitted_at(_required(payload, "submitted_at"))
 
             question = questions_by_code.get(question_code)
             if question is None:
@@ -257,10 +277,10 @@ class ImportService:
                 answers_imported += 1
                 scoring_jobs_queued += 1
             elif audio_file and record.audio_bytes is not None:
-                key = f"audio/import/{answer_id}.m4a"
-                await self._file_storage.save(key, record.audio_bytes)
                 if await self._answers.get_by_external_ref(answer_id) is not None:
                     continue
+                key = f"audio/import/{answer_id}.m4a"
+                await self._file_storage.save(key, record.audio_bytes)
                 await self._answers.import_answer(
                     candidate.id,
                     question.id,

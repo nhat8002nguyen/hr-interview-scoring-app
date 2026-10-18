@@ -1,4 +1,11 @@
-from api.importing.application.service import ImportSummary
+import io
+import json
+import zipfile
+
+from api.catalog.application.service import RoleWithCount
+from api.catalog.domain.entities import Question
+from api.catalog.domain.entities import Role as CatalogRole
+from api.importing.application.service import ImportService, ImportSummary
 from api.importing.domain import InvalidImportError
 from api.importing.presentation import router as import_router_module
 from api.importing.presentation.errors import register_importing_exception_handlers
@@ -37,7 +44,7 @@ class FakeImportService:
         return SUMMARY
 
 
-def _app(service: FakeImportService) -> tuple[FastAPI, JwtService]:
+def _app(service: object) -> tuple[FastAPI, JwtService]:
     jwt_service = JwtService(secret=SECRET)
     app = FastAPI()
     app.state.jwt_service = jwt_service
@@ -142,3 +149,82 @@ async def test_import_requires_hr_role() -> None:
         )
 
     assert response.status_code == 403
+
+
+class _MinimalCatalog:
+    def __init__(self) -> None:
+        self._roles: dict[str, CatalogRole] = {}
+        self._next_role_id = 1
+
+    async def list_questions(self) -> list[Question]:
+        return []
+
+    async def list_roles(self) -> list[RoleWithCount]:
+        return [RoleWithCount(role=role, candidate_count=0) for role in self._roles.values()]
+
+    async def ensure_role(self, name: str) -> CatalogRole:
+        if name not in self._roles:
+            self._roles[name] = CatalogRole(id=self._next_role_id, name=name)
+            self._next_role_id += 1
+        return self._roles[name]
+
+    async def upsert_question(
+        self,
+        *,
+        code: str,
+        sort_order: int,
+        prompt: str,
+        grading_guide: dict[str, str],
+    ) -> Question:
+        return Question(
+            id=0,
+            code=code,
+            sort_order=sort_order,
+            prompt=prompt,
+            grading_guide=grading_guide,
+        )
+
+
+def _malformed_pack() -> bytes:
+    files = {
+        "questions.md": b"# Interview questions\n",
+        "pipeline_log.csv": (
+            b"candidate_id,candidate_name,candidate_email,role\n"
+            b"C2041,Nhi Van Tran,nhi@example.com,Backend Engineer\n"
+        ),
+        "answers/A001.json": json.dumps(
+            {
+                "answer_id": "A001",
+                "candidate_id": "C2041",
+                "role": "Backend Engineer",
+                "question_id": "Q1",
+                "transcript": "hi",
+            }
+        ).encode("utf-8"),
+    }
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for name, content in files.items():
+            archive.writestr(name, content)
+    return buffer.getvalue()
+
+
+async def test_import_malformed_answer_json_400() -> None:
+    # The malformed record fails before candidates/answers/file_storage are used,
+    # so only the catalog is exercised and the rest can be omitted.
+    importer = ImportService(_MinimalCatalog(), None, None, None)
+    app, jwt_service = _app(importer)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/hr/import",
+            headers=_headers(jwt_service),
+            files={"file": ("pack.zip", _malformed_pack(), "application/zip")},
+        )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["type"] == "about:blank"
+    assert body["title"] == "Bad Request"
+    assert body["status"] == 400
+    assert body["detail"] == "answer record missing required field 'submitted_at'"

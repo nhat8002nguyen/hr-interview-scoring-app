@@ -226,9 +226,11 @@ class FakeAnswersService:
 class FakeFileStorage:
     def __init__(self) -> None:
         self.files: dict[str, bytes] = {}
+        self.save_calls: list[str] = []
 
     async def save(self, key: str, data: bytes) -> None:
         self.files[key] = data
+        self.save_calls.append(key)
 
 
 def _service() -> tuple[
@@ -326,7 +328,7 @@ async def test_import_audio_is_needs_a_person() -> None:
 
 
 async def test_import_is_idempotent_on_external_ref() -> None:
-    service, catalog, candidates, answers, _ = _service()
+    service, catalog, candidates, answers, file_storage = _service()
 
     first = await service.import_zip(_pack())
     second = await service.import_zip(_pack())
@@ -347,6 +349,7 @@ async def test_import_is_idempotent_on_external_ref() -> None:
     assert len(catalog.roles) == 5
     assert len(candidates.candidates) == 2
     assert len(answers.answers) == 2
+    assert file_storage.save_calls.count("audio/import/A034.m4a") == 1
 
 
 async def test_import_unreadable_zip_raises() -> None:
@@ -354,3 +357,36 @@ async def test_import_unreadable_zip_raises() -> None:
 
     with pytest.raises(InvalidImportError):
         await service.import_zip(b"this is not a zip archive")
+
+
+@pytest.mark.parametrize(
+    "answer_payload",
+    [
+        {
+            "answer_id": "A001",
+            "candidate_id": "C2041",
+            "role": "Backend Engineer",
+            "question_id": "Q1",
+            "transcript": "hi",
+        },
+        {
+            "answer_id": "A001",
+            "candidate_id": "C2041",
+            "role": "Backend Engineer",
+            "question_id": "Q1",
+            "submitted_at": "not-a-date",
+            "transcript": "hi",
+        },
+    ],
+    ids=["missing-submitted-at", "bad-date"],
+)
+async def test_import_malformed_answer_raises(answer_payload: dict[str, object]) -> None:
+    service, _, _, _, _ = _service()
+    files = {
+        "questions.md": QUESTIONS_MD.encode("utf-8"),
+        "pipeline_log.csv": PIPELINE_CSV.encode("utf-8"),
+        "answers/A001.json": json.dumps(answer_payload).encode("utf-8"),
+    }
+
+    with pytest.raises(InvalidImportError):
+        await service.import_zip(_zip_bytes(files))
