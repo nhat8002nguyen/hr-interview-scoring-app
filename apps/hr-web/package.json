@@ -27,7 +27,6 @@
     "jsdom": "^27",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vite-tsconfig-paths": "^6",
     "vitest": "^5"
   }
 }
