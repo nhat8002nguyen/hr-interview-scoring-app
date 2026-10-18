@@ -1,7 +1,7 @@
 # Talotrace Interview Scoring - HR Web App Design
 
 **Date:** 2026-10-18
-**Status:** Draft
+**Status:** Accepted
 **Repo:** `talot-assessment` monorepo, branch `spec/hr-web`
 **Frontend:** Next.js 16 (App Router), TypeScript, Tailwind CSS v4
 **Consumes:** `apps/api` (FastAPI monolith) per the accepted API contract
