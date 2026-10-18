@@ -98,3 +98,11 @@ it("throws ApiError without detail on a non-JSON error body", async () => {
   } as unknown as Response);
   await expect(getInterview("tok")).rejects.toMatchObject({ status: 500 });
 });
+
+it("throws ApiError without detail on an empty JSON error body", async () => {
+  fetchMock.mockResolvedValue(jsonResponse({}, { ok: false, status: 400 }));
+  await expect(getInterview("tok")).rejects.toMatchObject({
+    status: 400,
+    detail: undefined,
+  });
+});

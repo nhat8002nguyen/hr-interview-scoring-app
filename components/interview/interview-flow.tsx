@@ -25,12 +25,17 @@ function storageKey(token: string): string {
   return `talotrace:interview:${token}:currentQuestion`;
 }
 
+function isUnauthorized(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 401;
+}
+
 export function InterviewFlow({ token }: InterviewFlowProps) {
   const [phase, setPhase] = useState<Phase>("loading");
   const [interview, setInterview] = useState<InterviewResponse | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [submit, setSubmit] = useState<SubmitState>("idle");
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [advanceError, setAdvanceError] = useState<string | null>(null);
   const [lastUnchanged, setLastUnchanged] = useState(false);
 
   useEffect(() => {
@@ -43,12 +48,11 @@ export function InterviewFlow({ token }: InterviewFlowProps) {
 
         const total = data.questions.length;
         const stored = localStorage.getItem(storageKey(token));
-        const parsed = stored === null ? Number.NaN : Number(stored);
         const storedValid =
-          Number.isInteger(parsed) && parsed >= 0 && parsed < total;
+          stored !== null && /^\d+$/.test(stored) && Number(stored) < total;
 
         if (storedValid) {
-          setCurrentIndex(parsed);
+          setCurrentIndex(Number(stored));
           setPhase("ready");
           return;
         }
@@ -67,11 +71,7 @@ export function InterviewFlow({ token }: InterviewFlowProps) {
       })
       .catch((error: unknown) => {
         if (!active) return;
-        if (error instanceof ApiError && error.status === 401) {
-          setPhase("invalid-link");
-        } else {
-          setPhase("error");
-        }
+        setPhase(isUnauthorized(error) ? "invalid-link" : "error");
       });
 
     return () => {
@@ -82,53 +82,73 @@ export function InterviewFlow({ token }: InterviewFlowProps) {
   const goTo = useCallback(
     (index: number) => {
       setCurrentIndex(index);
+      setSubmitError(null);
+      setSubmit((current) => (current === "error" ? "idle" : current));
       localStorage.setItem(storageKey(token), String(index));
     },
     [token],
   );
 
-  const question = interview?.questions[currentIndex] ?? null;
+  const clearStoredIndex = useCallback(() => {
+    localStorage.removeItem(storageKey(token));
+  }, [token]);
 
-  async function handleSubmitText(questionId: number, text: string) {
+  const question = interview?.questions[currentIndex] ?? null;
+  const isLast = interview
+    ? currentIndex === interview.questions.length - 1
+    : true;
+  const submitting = submit === "submitting";
+
+  async function submitAnswer(
+    request: () => Promise<{ unchanged: boolean }>,
+  ): Promise<void> {
     setSubmit("submitting");
     setSubmitError(null);
+    setAdvanceError(null);
     try {
-      const result = await submitTextAnswer(token, questionId, text);
+      const result = await request();
       setLastUnchanged(result.unchanged);
       setSubmit("received");
-    } catch {
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        setPhase("invalid-link");
+        return;
+      }
       setSubmitError("Your answer could not be submitted. Please try again.");
       setSubmit("error");
     }
   }
 
-  async function handleSubmitAudio(questionId: number, file: File) {
-    setSubmit("submitting");
-    setSubmitError(null);
-    try {
-      const result = await submitAudioAnswer(token, questionId, file);
-      setLastUnchanged(result.unchanged);
-      setSubmit("received");
-    } catch {
-      setSubmitError("Your answer could not be submitted. Please try again.");
-      setSubmit("error");
-    }
+  function handleSubmitText(questionId: number, text: string) {
+    return submitAnswer(() => submitTextAnswer(token, questionId, text));
+  }
+
+  function handleSubmitAudio(questionId: number, file: File) {
+    return submitAnswer(() => submitAudioAnswer(token, questionId, file));
   }
 
   async function handleContinue() {
+    setAdvanceError(null);
     try {
       const updated = await getInterview(token);
       setInterview(updated);
       if (currentIndex + 1 >= updated.questions.length) {
+        clearStoredIndex();
         setPhase("complete");
       } else {
         goTo(currentIndex + 1);
       }
       setSubmit("idle");
       setSubmitError(null);
-    } catch {
-      setSubmitError("Your answer could not be submitted. Please try again.");
-      setSubmit("error");
+    } catch (error) {
+      if (isUnauthorized(error)) {
+        setPhase("invalid-link");
+        return;
+      }
+      // The answer was already saved; never regress to the form or lose the draft.
+      setAdvanceError(
+        "Your answer was received, but the next question could not be loaded. Please try again.",
+      );
     }
   }
 
@@ -137,7 +157,7 @@ export function InterviewFlow({ token }: InterviewFlowProps) {
   if (phase === "error") {
     return (
       <main className="flex min-h-screen items-center justify-center p-8">
-        <p className="text-sm text-red-700">
+        <p role="alert" className="text-sm text-red-700">
           Something went wrong. Please try again.
         </p>
       </main>
@@ -149,8 +169,13 @@ export function InterviewFlow({ token }: InterviewFlowProps) {
 
   if (submit === "received") {
     return (
-      <main className="mx-auto flex min-h-screen max-w-2xl flex-col justify-center p-8">
+      <main className="mx-auto flex min-h-screen max-w-2xl flex-col justify-center gap-4 p-8">
         <Confirmation unchanged={lastUnchanged} onContinue={handleContinue} />
+        {advanceError && (
+          <p role="alert" className="text-sm text-red-700">
+            {advanceError}
+          </p>
+        )}
       </main>
     );
   }
@@ -162,19 +187,33 @@ export function InterviewFlow({ token }: InterviewFlowProps) {
         question={question}
         index={currentIndex}
         total={interview.questions.length}
-        submitting={submit === "submitting"}
+        submitting={submitting}
         onSubmitText={handleSubmitText}
         onSubmitAudio={handleSubmitAudio}
       />
-      {submitError && <p className="text-sm text-red-700">{submitError}</p>}
-      <button
-        type="button"
-        onClick={() => goTo(Math.max(0, currentIndex - 1))}
-        disabled={currentIndex === 0}
-        className="self-start text-sm text-zinc-600 underline disabled:opacity-40"
-      >
-        Previous
-      </button>
+      {submitError && (
+        <p role="alert" className="text-sm text-red-700">
+          {submitError}
+        </p>
+      )}
+      <div className="flex gap-6">
+        <button
+          type="button"
+          onClick={() => goTo(Math.max(0, currentIndex - 1))}
+          disabled={currentIndex === 0 || submitting}
+          className="self-start text-sm text-zinc-600 underline disabled:opacity-40"
+        >
+          Previous
+        </button>
+        <button
+          type="button"
+          onClick={() => !isLast && goTo(currentIndex + 1)}
+          disabled={isLast || submitting}
+          className="self-start text-sm text-zinc-600 underline disabled:opacity-40"
+        >
+          Next
+        </button>
+      </div>
     </main>
   );
 }

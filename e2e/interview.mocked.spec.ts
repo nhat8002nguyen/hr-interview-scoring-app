@@ -58,3 +58,20 @@ test("answers, confirms, advances, and resumes on reload", async ({ page }) => {
   await page.reload();
   await expect(page.getByText("Question 2 of 6")).toBeVisible();
 });
+
+test("keeps the interview readable in dark mode", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.route("**/candidate/interview", (route) =>
+    route.fulfill({ json: interview(false) }),
+  );
+
+  await page.goto("/interview/test-token");
+  await expect(page.getByText("Question 1 of 6")).toBeVisible();
+
+  const colors = await page.evaluate(() => {
+    const style = getComputedStyle(document.body);
+    return { background: style.backgroundColor, color: style.color };
+  });
+  expect(colors.background).toBe("rgb(255, 255, 255)");
+  expect(colors.color).toBe("rgb(23, 23, 23)");
+});

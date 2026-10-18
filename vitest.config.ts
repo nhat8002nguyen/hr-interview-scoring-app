@@ -16,6 +16,7 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./tests/setup.ts"],
+    testTimeout: 15000,
     env: {
       NEXT_PUBLIC_API_ORIGIN: "http://api.test",
     },

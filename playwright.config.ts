@@ -19,5 +19,9 @@ export default defineConfig({
     command: "npm run dev",
     url: "http://localhost:3000",
     reuseExistingServer: true,
+    env: {
+      NEXT_PUBLIC_API_ORIGIN:
+        process.env.E2E_API_ORIGIN ?? "http://localhost:8000",
+    },
   },
 });
