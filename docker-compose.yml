@@ -1,0 +1,56 @@
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: talot
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d talot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - db-data:/var/lib/postgresql
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: ["uv", "run", "--directory", "apps/api", "alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/talot
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: ["uv", "run", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "3000"]
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/talot
+      JWT_SECRET: dev-secret-change-me-in-production
+      CORS_ORIGINS: http://localhost:3001,http://localhost:3002
+      CANDIDATE_WEB_ORIGIN: http://localhost:3001
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_MODEL: deepseek-chat
+      AUDIO_STORAGE_DIR: /data/audio
+      SCORING_WORKERS: "2"
+      SCORING_MAX_ATTEMPTS: "3"
+      SEED_HR_EMAIL: hr@talotrace.ai
+      SEED_HR_PASSWORD: change-me
+    volumes:
+      - audio-data:/data/audio
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  db-data:
+  audio-data:
