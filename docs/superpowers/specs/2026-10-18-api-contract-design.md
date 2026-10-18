@@ -90,7 +90,7 @@ talotrace-assessment/
 | Scoring queue | `scoring_jobs` table in PostgreSQL, drained by an in-process `asyncio` worker pool with `FOR UPDATE SKIP LOCKED`. |
 | LLM integration | `ScoringLlmPort` protocol + `DeepSeekLlm` adapter; config via env. Output strictly validated to `{score: int 1-4, reasoning: str}`. |
 | Audio storage | `FileStorage` abstraction, local filesystem volume in phase 1; object-storage adapter later. |
-| Resubmission | One active `Answer` row per (candidate, question). Resubmit increments `version` and resets the `ScoringJob` to `queued`. Exactly one score ever exists per candidate x question. |
+| Resubmission | One active `Answer` row per (candidate, question), with a `content_hash`. Byte-identical resubmission is an idempotent no-op; changed content increments `version` and resets the `ScoringJob` to `queued`. Exactly one score ever exists per candidate x question. |
 | Candidate isolation | Candidate endpoints have no cross-candidate lookups; grades and grading guides are never serialized to the candidate area. |
 
 ## 5. Authentication & Authorization
@@ -162,11 +162,14 @@ Enums:
 | answer_type | str | `text` \| `audio` |
 | text | text nullable | transcript for text answers |
 | audio_key | str nullable | `FileStorage` key for audio answers |
+| content_hash | str | SHA-256 hex of submitted content (UTF-8 text bytes, or audio file bytes) |
 | version | int | starts 1; increments on resubmit |
 | external_ref | str nullable indexed | data-pack `answer_id` (e.g. `"A001"`) |
 | submitted_at | timestamptz | |
 
 - Unique constraint on `(candidate_id, question_id)`. There is exactly one active row per candidate x question.
+
+**Resubmission semantics.** Each submit computes `content_hash = sha256(submitted bytes)`. If the active answer for that question already has the same `content_hash`, the submit is an idempotent no-op: no new version, no scoring-job reset, no re-score. Otherwise the answer is upserted (new row, or `version` incremented when content changes), `content_hash` is stored, and the `scoring_job` is reset to `queued`. This makes a double-click or byte-identical resubmission produce exactly one score, and the `(candidate_id, question_id)` unique key makes racing duplicate submits converge to one row.
 
 ### 6.5 `scoring_jobs`
 
@@ -275,20 +278,24 @@ Response `200`:
 { "answer_type": "text", "text": "..." }
 ```
 
-Response `201`:
+Response `201` (or `200` when unchanged):
 
 ```json
 {
   "status": "received",
+  "unchanged": false,
   "answer": { "answer_type": "text", "version": 2, "submitted_at": "..." }
 }
 ```
 
+- `201` + `unchanged: false` when the answer is new or its content changed (a new `version` was written and the job re-queued).
+- `200` + `unchanged: true` when the submitted content hash matches the existing answer (idempotent no-op; the existing score/job is left untouched).
+
 `422` if `text` is empty/whitespace or `answer_type` is not `text`. `404` if `question_id` is not one of the six.
 
-`POST /candidate/interview/answers/{question_id}/audio` - Request: `multipart/form-data` with field `file` (audio). Response `201` (same shape, `answer_type: "audio"`). `422` on missing/invalid file, `404` unknown question.
+`POST /candidate/interview/answers/{question_id}/audio` - Request: `multipart/form-data` with field `file` (audio). Response `201`/`200` (same shape, `answer_type: "audio"`, hash over the file bytes). `422` on missing/invalid file, `404` unknown question.
 
-Resubmission semantics: submitting again for the same question increments `version`, replaces content, and resets the scoring job to `queued`. The response reports the new `version`.
+Resubmission semantics: submitting again for the same question upserts the single active answer. Identical content (same `content_hash`) is a no-op; changed content increments `version`, replaces content, and resets the scoring job to `queued`. The response reports `unchanged` and the current `version`.
 
 ### 7.3 HR (JWT `hr`)
 
@@ -506,7 +513,7 @@ Prompt-injection safety: the system prompt instructs the model that the candidat
 
 | Requirement | Design guarantee |
 |---|---|
-| Same answer twice does not create two scores | Unique `(candidate_id, question_id)` on `answers`; resubmit increments `version` and resets the single `scoring_job`. |
+| Same answer twice does not create two scores | Unique `(candidate_id, question_id)` on `answers`; resubmit upserts the single row and resets the single `scoring_job`; byte-identical content (`content_hash`) is an idempotent no-op. |
 | HR sees which submission counts | One active answer per question; `version` + `submitted_at` expose resubmission history. |
 | Candidate cannot see grades/other candidates/HR pages via API | Candidate endpoints scope by token and never serialize scores or grading guides; `/hr/*` requires JWT `hr`; no cross-candidate lookups exist. |
 | Failed job visible with retry, never shown as low score | `status=failed` + `last_error`; `POST /hr/scoring-jobs/{id}/retry`; failed jobs have no `final_score`. |
@@ -517,6 +524,6 @@ Prompt-injection safety: the system prompt instructs the model that the candidat
 
 ## 13. Testing & Verification
 
-- Backend: HTTP tests per endpoint covering auth (401/403), candidate isolation, resubmission idempotency, score-override reason requirement, failed-job retry, and import idempotency. Scoring worker tested with a fake `ScoringLlmPort` and with schema-validation cases (invalid score, missing field, injected instructions).
+- Backend: HTTP tests per endpoint covering auth (401/403), candidate isolation, resubmission idempotency (changed content re-queues; byte-identical content is a no-op), score-override reason requirement, failed-job retry, and import idempotency. Scoring worker tested with a fake `ScoringLlmPort` and with schema-validation cases (invalid score, missing field, injected instructions).
 - Frontend: candidate flow (open link, answer, resume, resubmit, confirmation) and HR flow (sign-in, role -> candidate -> override, retry) against the real API.
 - End-to-end: import the data pack, observe text answers reach `scored`, audio answers are `needs_a_person`, and a duplicate submission yields a single score.
