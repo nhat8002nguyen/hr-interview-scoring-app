@@ -105,7 +105,9 @@ export function createApiClient(store: SessionStore, baseUrl: string): ApiClient
     const tokenUsed = await store.getAccessToken();
     let response = await send(method, path, init);
 
-    if (response.status === 401) {
+    // Only a request that carried a token can be recovered by refreshing.
+    // Sign-in, which carries none, surfaces the upstream 401 unchanged.
+    if (response.status === 401 && tokenUsed) {
       await refresh(tokenUsed);
       response = await send(method, path, init);
     }
