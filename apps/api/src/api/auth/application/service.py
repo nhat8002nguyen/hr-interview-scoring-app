@@ -1,0 +1,78 @@
+from dataclasses import dataclass
+from uuid import uuid4
+
+from api.auth.domain.entities import User
+from api.auth.domain.exceptions import UserNotFoundError
+from api.auth.domain.repositories import UserRepository
+from iam import (
+    ActiveUserData,
+    HashingServiceProtocol,
+    JwtService,
+    RefreshTokenStorageProtocol,
+    UnauthorizedError,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class AuthTokens:
+    user: User
+    access_token: str
+    refresh_token: str
+
+
+class AuthenticationService:
+    def __init__(
+        self,
+        users: UserRepository,
+        hashing: HashingServiceProtocol,
+        jwt: JwtService,
+        refresh_tokens: RefreshTokenStorageProtocol,
+    ) -> None:
+        self._users = users
+        self._hashing = hashing
+        self._jwt = jwt
+        self._refresh_tokens = refresh_tokens
+
+    async def sign_in(self, email: str, password: str) -> AuthTokens:
+        user = await self._users.get_by_email(email)
+        if user is None or not await self._hashing.compare(password, user.password_hash):
+            raise UnauthorizedError("Invalid credentials")
+        return await self._issue_tokens(user)
+
+    async def refresh(self, refresh_token: str) -> AuthTokens:
+        claims = self._jwt.verify_refresh_token(refresh_token)
+        user_id = await self._refresh_tokens.validate_and_consume(claims.jti)
+        if user_id is None or user_id != claims.sub:
+            raise UnauthorizedError("Refresh token is no longer valid")
+        user = await self._users.get(claims.sub)
+        if user is None:
+            raise UserNotFoundError(claims.sub)
+        return await self._issue_tokens(user)
+
+    async def sign_out(self, refresh_token: str | None) -> None:
+        if refresh_token is None:
+            return
+        try:
+            claims = self._jwt.verify_refresh_token(refresh_token)
+        except UnauthorizedError:
+            return
+        await self._refresh_tokens.revoke(claims.jti)
+
+    async def _issue_tokens(self, user: User) -> AuthTokens:
+        token_id = str(uuid4())
+        active_user = ActiveUserData(
+            sub=user.id,
+            email=user.email,
+            role=user.role,
+            group_ids=frozenset(),
+        )
+        await self._refresh_tokens.save(
+            token_id,
+            user.id,
+            self._jwt.refresh_token_ttl_seconds,
+        )
+        return AuthTokens(
+            user=user,
+            access_token=self._jwt.sign_access_token(active_user),
+            refresh_token=self._jwt.sign_refresh_token(user.id, token_id),
+        )
