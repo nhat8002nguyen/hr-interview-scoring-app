@@ -31,6 +31,18 @@ class ScoringJobRepository(Protocol):
         max_attempts: int,
     ) -> ScoringJob: ...
 
+    async def set_override(
+        self,
+        answer_id: int,
+        *,
+        final_score: int,
+        override_reason: str,
+        overridden_by: int,
+        now: datetime,
+    ) -> ScoringJob: ...
+
+    async def mark_retried(self, job_id: int, *, now: datetime) -> ScoringJob: ...
+
     async def list(self, status: str | None) -> list[ScoringJobSummary]: ...
 
     async def reset_stale_claims(self, before: datetime) -> int: ...

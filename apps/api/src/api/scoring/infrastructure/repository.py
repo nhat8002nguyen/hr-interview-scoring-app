@@ -187,6 +187,52 @@ class SqlAlchemyScoringJobRepository:
             raise ScoringJobNotFoundError(job_id)
         return self._to_job(row)
 
+    async def set_override(
+        self,
+        answer_id: int,
+        *,
+        final_score: int,
+        override_reason: str,
+        overridden_by: int,
+        now: datetime,
+    ) -> ScoringJob:
+        row = await self._session.scalar(
+            select(ScoringJobModel).where(ScoringJobModel.answer_id == answer_id)
+        )
+        if row is None:
+            raise ScoringJobNotFoundError(answer_id)
+        await self._session.execute(
+            update(ScoringJobModel)
+            .where(ScoringJobModel.id == row.id)
+            .values(
+                final_score=final_score,
+                override_reason=override_reason,
+                overridden_by=overridden_by,
+                updated_at=now,
+            )
+        )
+        reloaded = await self._load(row.id)
+        if reloaded is None:
+            raise ScoringJobNotFoundError(row.id)
+        return self._to_job(reloaded)
+
+    async def mark_retried(self, job_id: int, *, now: datetime) -> ScoringJob:
+        await self._session.execute(
+            update(ScoringJobModel)
+            .where(ScoringJobModel.id == job_id)
+            .values(
+                status="queued",
+                attempt_count=ScoringJobModel.attempt_count + 1,
+                last_error=None,
+                claimed_at=None,
+                updated_at=now,
+            )
+        )
+        row = await self._load(job_id)
+        if row is None:
+            raise ScoringJobNotFoundError(job_id)
+        return self._to_job(row)
+
     async def list(self, status: str | None) -> list[ScoringJobSummary]:
         rows = (await self._session.execute(build_list_statement(status))).all()
         return [
