@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Talotrace interview-scoring backend"
 requires-python = ">=3.14"
 dependencies = [
+  "api",
   "database",
   "iam",
 ]
@@ -13,11 +14,13 @@ package = false
 
 [tool.uv.workspace]
 members = [
+  "apps/api",
   "libs/database",
   "libs/iam",
 ]
 
 [tool.uv.sources]
+api = { workspace = true }
 database = { workspace = true }
 iam = { workspace = true }
 
