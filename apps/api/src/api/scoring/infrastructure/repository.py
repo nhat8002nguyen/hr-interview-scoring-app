@@ -17,7 +17,10 @@ from api.scoring.infrastructure.models import ScoringJobModel
 def build_claim_statement() -> Select[ScoringJobModel]:
     return (
         select(ScoringJobModel)
-        .where(ScoringJobModel.status == literal_column("'queued'"))
+        .where(
+            ScoringJobModel.status == literal_column("'queued'"),
+            ScoringJobModel.claimed_at.is_(None),
+        )
         .order_by(ScoringJobModel.id)
         .limit(1)
         .with_for_update(skip_locked=True)

@@ -12,6 +12,7 @@ def test_claim_uses_skip_locked() -> None:
     sql = str(build_claim_statement().compile(dialect=postgresql.dialect()))
     assert "FOR UPDATE SKIP LOCKED" in sql
     assert "status = 'queued'" in sql
+    assert "claimed_at IS NULL" in sql
 
 
 def test_record_failure_transitions() -> None:

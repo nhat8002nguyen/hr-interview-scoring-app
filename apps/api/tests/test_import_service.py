@@ -189,6 +189,7 @@ class FakeCandidatesService:
 class FakeAnswersService:
     def __init__(self) -> None:
         self.answers: dict[str, Answer] = {}
+        self._by_key: dict[tuple[int, int], Answer] = {}
         self._next_id = 1
 
     async def get_by_external_ref(self, ref: str) -> Answer | None:
@@ -205,22 +206,43 @@ class FakeAnswersService:
         content_hash: str,
         external_ref: str | None,
         submitted_at: datetime,
-    ) -> Answer:
-        answer = Answer(
-            id=self._next_id,
+    ) -> tuple[Answer, bool]:
+        key = (candidate_id, question_id)
+        existing = self._by_key.get(key)
+        if existing is None:
+            answer = Answer(
+                id=self._next_id,
+                candidate_id=candidate_id,
+                question_id=question_id,
+                answer_type=answer_type,
+                text=text,
+                audio_key=audio_key,
+                content_hash=content_hash,
+                version=1,
+                external_ref=external_ref,
+                submitted_at=submitted_at,
+            )
+            self._next_id += 1
+            self._by_key[key] = answer
+            if external_ref is not None:
+                self.answers[external_ref] = answer
+            return answer, True
+        if existing.content_hash == content_hash:
+            return existing, False
+        updated = Answer(
+            id=existing.id,
             candidate_id=candidate_id,
             question_id=question_id,
             answer_type=answer_type,
             text=text,
             audio_key=audio_key,
             content_hash=content_hash,
-            version=1,
-            external_ref=external_ref,
+            version=existing.version + 1,
+            external_ref=existing.external_ref,
             submitted_at=submitted_at,
         )
-        self._next_id += 1
-        self.answers[external_ref] = answer
-        return answer
+        self._by_key[key] = updated
+        return updated, True
 
 
 class FakeFileStorage:
@@ -350,6 +372,50 @@ async def test_import_is_idempotent_on_external_ref() -> None:
     assert len(candidates.candidates) == 2
     assert len(answers.answers) == 2
     assert file_storage.save_calls.count("audio/import/A034.m4a") == 1
+
+
+def _retake_pack() -> bytes:
+    files = {
+        "questions.md": QUESTIONS_MD.encode("utf-8"),
+        "pipeline_log.csv": PIPELINE_CSV.encode("utf-8"),
+        "answers/A022.json": json.dumps(
+            {
+                "answer_id": "A022",
+                "candidate_id": "C2052",
+                "role": "Backend Engineer",
+                "question_id": "Q1",
+                "submitted_at": "2026-09-14T10:15:00",
+                "transcript": "First attempt.",
+            }
+        ).encode("utf-8"),
+        "answers/A023.json": json.dumps(
+            {
+                "answer_id": "A023",
+                "candidate_id": "C2052",
+                "role": "Backend Engineer",
+                "question_id": "Q1",
+                "submitted_at": "2026-09-14T11:15:00",
+                "transcript": "Second attempt, better.",
+            }
+        ).encode("utf-8"),
+    }
+    return _zip_bytes(files)
+
+
+async def test_reimport_does_not_overcount_merged_retake() -> None:
+    service, _, _, answers, _ = _service()
+
+    first = await service.import_zip(_retake_pack())
+    second = await service.import_zip(_retake_pack())
+
+    assert first.answers_imported == 2
+    assert first.scoring_jobs_queued == 2
+
+    assert second.answers_imported == 0
+    assert second.scoring_jobs_queued == 0
+    assert second.audio_answers_needing_person == 0
+
+    assert len(answers.answers) == 1
 
 
 async def test_import_unreadable_zip_raises() -> None:

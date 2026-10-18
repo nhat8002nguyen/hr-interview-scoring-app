@@ -16,6 +16,7 @@ import time
 import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 import api.auth.infrastructure.models  # noqa: F401 - register UserModel, RefreshTokenModel
@@ -25,10 +26,11 @@ import api.scoring.infrastructure.models  # noqa: F401 - register ScoringJobMode
 import asyncpg
 import pytest
 from api.candidates.application.service import AnswersService, CandidatesService
-from api.candidates.infrastructure.models import AnswerModel
+from api.candidates.infrastructure.models import AnswerModel, CandidateModel
 from api.candidates.infrastructure.storage import LocalFileStorage
 from api.candidates.infrastructure.unit_of_work import CandidatesUnitOfWork
 from api.catalog.application.service import CatalogService
+from api.catalog.infrastructure.models import QuestionModel, RoleModel
 from api.catalog.infrastructure.unit_of_work import CatalogUnitOfWork
 from api.importing.application.service import ImportService
 from api.scoring.application.ports import LlmScore
@@ -232,6 +234,18 @@ async def test_import_and_score_end_to_end(
         assert summary.scoring_jobs_queued == 30
         assert summary.audio_answers_needing_person == 5
 
+        # Re-importing the same pack must not overcount the merged retake
+        # (C2052 answered Q3 twice: A022 then A023). The surviving row keeps
+        # A022's external_ref, so A023 is re-processed but unchanged and must
+        # not be reported as newly imported or re-queued.
+        second = await importing.import_zip(_build_pack_zip())
+        assert second.roles_created == 0
+        assert second.questions_created == 0
+        assert second.candidates_created == 0
+        assert second.answers_imported == 0
+        assert second.scoring_jobs_queued == 0
+        assert second.audio_answers_needing_person == 0
+
         stop_event = asyncio.Event()
         worker = ScoringWorker(
             lambda: SqlAlchemyScoringUnitOfWork(session_factory),
@@ -283,5 +297,64 @@ async def test_import_and_score_end_to_end(
         assert after_job.status == "scored"
         assert after_job.suggested_score == 3
         assert after_job.final_score == 3
+    finally:
+        await engine.dispose()
+
+
+async def test_claim_is_exclusive(
+    postgres_container: _PostgresContainer,
+) -> None:
+    await _wait_until_ready(postgres_container)
+
+    engine = create_engine(postgres_container.url)
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        session_factory = create_session_factory(engine)
+
+        async with session_factory() as session:
+            role = RoleModel(name="Backend Engineer")
+            session.add(role)
+            await session.flush()
+            question = QuestionModel(
+                code="Q1",
+                sort_order=1,
+                prompt="Tell us about a piece of work.",
+                grading_guide={"1": "No", "4": "Yes"},
+            )
+            session.add(question)
+            await session.flush()
+            candidate = CandidateModel(
+                name="Ada",
+                email="ada@example.com",
+                role_id=role.id,
+                session_token="token-1",
+            )
+            session.add(candidate)
+            await session.flush()
+            answer = AnswerModel(
+                candidate_id=candidate.id,
+                question_id=question.id,
+                answer_type="text",
+                text="hello",
+                content_hash="abc123",
+                version=1,
+                submitted_at=datetime.now(UTC),
+            )
+            session.add(answer)
+            await session.flush()
+            session.add(ScoringJobModel(answer_id=answer.id, status="queued"))
+            await session.commit()
+
+        def uow_factory() -> SqlAlchemyScoringUnitOfWork:
+            return SqlAlchemyScoringUnitOfWork(session_factory)
+
+        async with uow_factory() as uow:
+            first = await uow.scoring_jobs.claim_next_queued(datetime.now(UTC))
+        assert first is not None
+
+        async with uow_factory() as uow:
+            second = await uow.scoring_jobs.claim_next_queued(datetime.now(UTC))
+        assert second is None
     finally:
         await engine.dispose()

@@ -24,6 +24,7 @@ def build_upsert_statement(answer: Answer) -> Insert:
     return statement.on_conflict_do_update(
         index_elements=["candidate_id", "question_id"],
         set_={
+            "answer_type": answer.answer_type,
             "text": answer.text,
             "audio_key": answer.audio_key,
             "content_hash": answer.content_hash,

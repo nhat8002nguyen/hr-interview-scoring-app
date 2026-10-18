@@ -207,7 +207,7 @@ class AnswersService:
         content_hash: str,
         external_ref: str | None,
         submitted_at: datetime,
-    ) -> Answer:
+    ) -> tuple[Answer, bool]:
         status = "queued" if answer_type == "text" else "needs_a_person"
         async with self._uow_factory() as uow:
             stored, changed = await uow.answers.upsert(
@@ -226,4 +226,4 @@ class AnswersService:
             )
         if changed:
             await self._scoring_jobs.reset_for_answer(stored.id, status=status)
-        return stored
+        return stored, changed
