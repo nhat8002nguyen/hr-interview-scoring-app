@@ -1,16 +1,47 @@
-# Dependencies
-node_modules/
-.pnp
-.pnp.js
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
 
-# Next.js builds
-.next/
-out/
-build/
-dist/
-.turbo/
+# testing
+/coverage
 
-# Python
+# next.js
+/.next/
+/out/
+
+# production
+/build
+/dist
+/.turbo/
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+!.env.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# Python (sibling apps; keep stray artifacts out)
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -21,25 +52,8 @@ venv/
 .mypy_cache/
 .pytest_cache/
 
-# Environment
-.env
-.env.local
-.env.*.local
-
-# Logs
-*.log
-npm-debug.log*
-
-# Test / coverage
-coverage/
-.coverage
-htmlcov/
-
-# OS / editor
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
-
 # Reference materials (scaffolding input, not product code)
 intial-resources/
+
+# SDD scratch
+.superpowers/
