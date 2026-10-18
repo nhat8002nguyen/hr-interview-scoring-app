@@ -1,0 +1,48 @@
+[project]
+name = "talot-backend"
+version = "0.1.0"
+description = "Talotrace interview-scoring backend"
+requires-python = ">=3.14"
+dependencies = [
+  "database",
+  "iam",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = [
+  "libs/database",
+  "libs/iam",
+]
+
+[tool.uv.sources]
+database = { workspace = true }
+iam = { workspace = true }
+
+[dependency-groups]
+dev = [
+  "pytest>=9.0",
+  "pytest-asyncio>=1.2",
+  "ruff>=0.14",
+  "mypy>=1.18",
+  "httpx>=0.28",
+]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+src = ["libs", "apps"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["libs", "apps"]
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+exclude = ["(.*/)?migrations/", "(.*/)?tests/"]
