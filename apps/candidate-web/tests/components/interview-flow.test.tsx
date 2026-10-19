@@ -154,6 +154,23 @@ it("shows an inline error when submit rejects", async () => {
   expect(await screen.findByText(/could not be submitted/i)).toBeInTheDocument();
 });
 
+it("shows the exhausted state when a submit returns 409", async () => {
+  const user = userEvent.setup();
+  vi.mocked(getInterview).mockResolvedValue(interview());
+  vi.mocked(submitTextAnswer).mockRejectedValue(
+    new ApiError(409, "Maximum submissions (3) reached for question 1"),
+  );
+  render(<InterviewFlow token="tok" />);
+  await screen.findByText("Question 1 of 6");
+  await user.type(screen.getByLabelText("Your answer"), "x");
+  await user.click(screen.getByRole("button", { name: "Submit answer" }));
+  expect(await screen.findByText("No attempts remaining")).toBeInTheDocument();
+  expect(
+    screen.getByText("You have used all attempts for this question."),
+  ).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Submit answer" })).toBeDisabled();
+});
+
 it("shows invalid-link when a submit returns 401", async () => {
   const user = userEvent.setup();
   vi.mocked(getInterview).mockResolvedValue(interview());

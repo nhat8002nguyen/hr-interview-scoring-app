@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from hashlib import sha256
 
 import pytest
 
@@ -63,15 +64,25 @@ class FakeAnswerRepository:
             (answer.candidate_id, answer.question_id): answer for answer in answers or []
         }
         self._next_id = max((answer.id for answer in self._answers.values()), default=0) + 1
+        self.block_next_upsert = False
 
     async def upsert(
-        self, answer: Answer, *, max_submissions: int
+        self, answer: Answer, *, max_submissions: int | None
     ) -> tuple[Answer, bool]:
         key = (answer.candidate_id, answer.question_id)
         existing = self._answers.get(key)
+        if self.block_next_upsert:
+            self.block_next_upsert = False
+            if existing is not None:
+                return existing, False
         changed = existing is None or existing.content_hash != answer.content_hash
-        if existing is not None and changed and existing.version >= max_submissions:
-            raise AttemptsExhaustedError(answer.question_id, max_submissions)
+        if (
+            existing is not None
+            and changed
+            and max_submissions is not None
+            and existing.version >= max_submissions
+        ):
+            return existing, False
         if existing is None:
             stored = Answer(
                 id=self._next_id,
@@ -247,8 +258,9 @@ async def test_submit_audio_requires_person(tmp_path) -> None:
     )
 
     assert result.answer.answer_type == "audio"
-    assert result.answer.audio_key == "audio/1/7.m4a"
-    assert await file_storage.read("audio/1/7.m4a") == b"\x00audio"
+    content_hash = sha256(b"\x00audio").hexdigest()
+    assert result.answer.audio_key == f"audio/1/7/{content_hash}.m4a"
+    assert await file_storage.read(result.answer.audio_key) == b"\x00audio"
     assert scoring_jobs.reset_calls == [(result.answer.id, "needs_a_person")]
 
 
@@ -361,3 +373,72 @@ async def test_submit_audio_at_limit_does_not_overwrite_accepted_file(tmp_path) 
         )
 
     assert await file_storage.read("audio/1/7.m4a") == b"accepted"
+
+
+async def test_rejected_audio_race_does_not_overwrite_accepted_file(tmp_path) -> None:
+    accepted = Answer(
+        id=10,
+        candidate_id=1,
+        question_id=7,
+        answer_type="audio",
+        text=None,
+        audio_key="audio/1/7.m4a",
+        content_hash="accepted",
+        version=2,
+        external_ref=None,
+        submitted_at=datetime.now(UTC),
+    )
+    service, answers_repo, _, file_storage = _answers_service(
+        tmp_path, question_ids={7}, answers=[accepted]
+    )
+    await file_storage.save("audio/1/7.m4a", b"accepted")
+    answers_repo.block_next_upsert = True
+
+    with pytest.raises(AttemptsExhaustedError):
+        await service.submit_audio(
+            candidate_id=1,
+            question_id=7,
+            data=b"rejected",
+            filename="clip.m4a",
+        )
+
+    assert await file_storage.read("audio/1/7.m4a") == b"accepted"
+
+
+async def test_import_answer_ignores_candidate_limit(tmp_path) -> None:
+    existing = Answer(
+        id=10,
+        candidate_id=1,
+        question_id=7,
+        answer_type="text",
+        text="old",
+        audio_key=None,
+        content_hash="old",
+        version=3,
+        external_ref=None,
+        submitted_at=datetime.now(UTC),
+    )
+    service, _, _, _ = _answers_service(tmp_path, question_ids={7}, answers=[existing])
+
+    stored, changed = await service.import_answer(
+        candidate_id=1,
+        question_id=7,
+        answer_type="text",
+        text="imported",
+        audio_key=None,
+        content_hash="imported",
+        external_ref="A001",
+        submitted_at=datetime.now(UTC),
+    )
+
+    assert changed is True
+    assert stored.version == 4
+
+
+async def test_lowered_limit_rejects_further_changed_submit(tmp_path) -> None:
+    service, _, _, _ = _answers_service(tmp_path, question_ids={7}, max_submissions=1)
+
+    await service.submit_text(candidate_id=1, question_id=7, text="a")
+
+    with pytest.raises(AttemptsExhaustedError):
+        await service.submit_text(candidate_id=1, question_id=7, text="b")

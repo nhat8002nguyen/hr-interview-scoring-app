@@ -9,7 +9,7 @@ from api.candidates.domain.entities import Answer, Candidate
 from api.candidates.infrastructure.models import AnswerModel, CandidateModel
 
 
-def build_upsert_statement(answer: Answer, max_submissions: int) -> Insert:
+def build_upsert_statement(answer: Answer, max_submissions: int | None) -> Insert:
     statement = insert(AnswerModel).values(
         candidate_id=answer.candidate_id,
         question_id=answer.question_id,
@@ -21,6 +21,9 @@ def build_upsert_statement(answer: Answer, max_submissions: int) -> Insert:
         external_ref=answer.external_ref,
         submitted_at=answer.submitted_at,
     )
+    conditions = [AnswerModel.content_hash != statement.excluded.content_hash]
+    if max_submissions is not None:
+        conditions.append(AnswerModel.version < max_submissions)
     return statement.on_conflict_do_update(
         index_elements=["candidate_id", "question_id"],
         set_={
@@ -31,10 +34,7 @@ def build_upsert_statement(answer: Answer, max_submissions: int) -> Insert:
             "version": literal_column("answers.version + 1"),
             "submitted_at": answer.submitted_at,
         },
-        where=and_(
-            AnswerModel.content_hash != statement.excluded.content_hash,
-            AnswerModel.version < max_submissions,
-        ),
+        where=and_(*conditions),
     )
 
 
@@ -115,7 +115,9 @@ class SqlAlchemyAnswerRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def upsert(self, answer: Answer, *, max_submissions: int) -> tuple[Answer, bool]:
+    async def upsert(
+        self, answer: Answer, *, max_submissions: int | None
+    ) -> tuple[Answer, bool]:
         result = await self._session.execute(
             build_upsert_statement(answer, max_submissions=max_submissions)
         )

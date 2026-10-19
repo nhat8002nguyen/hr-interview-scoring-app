@@ -158,7 +158,7 @@ class AnswersService:
         if active is not None and active.version >= self.max_submissions:
             raise AttemptsExhaustedError(question_id, self.max_submissions)
         ext = Path(filename).suffix or ".m4a"
-        key = f"audio/{candidate_id}/{question_id}{ext}"
+        key = f"audio/{candidate_id}/{question_id}/{content_hash}{ext}"
         await self._file_storage.save(key, data)
         return await self._submit(
             Answer(
@@ -241,7 +241,7 @@ class AnswersService:
                     external_ref=external_ref,
                     submitted_at=submitted_at,
                 ),
-                max_submissions=self.max_submissions,
+                max_submissions=None,
             )
         if changed:
             await self._scoring_jobs.reset_for_answer(stored.id, status=status)
