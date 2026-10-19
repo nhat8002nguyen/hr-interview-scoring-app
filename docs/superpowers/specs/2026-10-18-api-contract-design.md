@@ -8,6 +8,9 @@
 **Database:** PostgreSQL 18
 **LLM:** DeepSeek (adapter-swappable)
 
+> **Amended by `2026-10-19-hr-self-registration-and-tenancy-design.md`.**
+> That spec adds HR self-registration and per-account tenancy and is authoritative where it changes this document.
+
 ## 1. Goal
 
 Define the JSON API contract shared by two frontend apps (candidate area, HR area) and one FastAPI backend.
@@ -84,7 +87,7 @@ talotrace-assessment/
 |---|---|
 | API style | JSON over HTTP, resource-oriented REST. No version prefix in phase 1 (`/auth`, `/hr`, `/candidate`). |
 | Error format | RFC 7807 Problem Details (`{"type","title","status","detail"}`), matching the template. |
-| HR auth | Bearer JWT via template `libs/iam`, role `hr`. One seeded HR account. |
+| HR auth | Bearer JWT via template `libs/iam`, role `hr`. Seeded HR account plus self-service sign-up. |
 | Candidate auth | No credentials. Opaque unguessable token (`secrets.token_urlsafe(32)`) passed as `X-Candidate-Token` header, scoping every response to that candidate. |
 | ID scheme | Integer primary keys for all entities; `session_token` is the only secret (not a primary key). |
 | Scoring queue | `scoring_jobs` table in PostgreSQL, drained by an in-process `asyncio` worker pool with `FOR UPDATE SKIP LOCKED`. |
@@ -99,7 +102,8 @@ talotrace-assessment/
 
 Reuses the template IAM (`require_auth(AuthType.JWT)`, `require_roles(Role.HR)`).
 
-- Seeded HR account (email + bcrypt password) is created at startup/migration.
+- Seeded HR account (email + bcrypt password) is created at startup/migration. The seeded account is an ordinary tenant, not an admin.
+- `POST /auth/sign-up` lets anyone create an HR account (email + password, no verification); see section 7.1.
 - `POST /auth/sign-in` returns an access token (`role=hr`, TTL 1h) and a refresh token (single-use rotation, as in the template).
 - All `/hr/*` endpoints require a valid JWT with `role=hr`. Any other role (or no token) returns `401`/`403`.
 
@@ -145,11 +149,12 @@ Enums:
 | Column | Type | Notes |
 |---|---|---|
 | id | int PK | |
+| owner_id | int FK -> users.id | NOT NULL, indexed; scopes every candidate to its HR account |
 | name | str nullable | |
-| email | str unique | required; HR keys candidate creation off it |
+| email | str | required; unique per owner (`owner_id`, `email`) |
 | role_id | int FK -> roles.id | |
-| session_token | str unique indexed | unguessable secret |
-| external_ref | str nullable indexed | data-pack `candidate_id` (e.g. `"C2041"`) for phase-2 matching |
+| session_token | str unique indexed | unguessable secret; globally unique so a link resolves regardless of owner |
+| external_ref | str nullable indexed | data-pack `candidate_id` (e.g. `"C2041"`); unique per owner (`owner_id`, `external_ref`) |
 | created_at | timestamptz | |
 
 ### 6.4 `answers`
@@ -161,7 +166,7 @@ Enums:
 | question_id | int FK -> questions.id | |
 | answer_type | str | `text` \| `audio` |
 | text | text nullable | transcript for text answers |
-| audio_key | str nullable | `FileStorage` key for audio answers; candidate uploads use `audio/{candidate_id}/{question_id}/{content_hash}{ext}` |
+| audio_key | str nullable | `FileStorage` key for audio answers; candidate uploads use `audio/{candidate_id}/{question_id}/{content_hash}{ext}`; imported audio uses `audio/import/{candidate_id}/{answer_id}.m4a` |
 | content_hash | str | SHA-256 hex of submitted content (UTF-8 text bytes, or audio file bytes) |
 | version | int | starts 1; increments on changed resubmit; doubles as the submission counter for the cap |
 | external_ref | str nullable indexed | data-pack `answer_id` (e.g. `"A001"`) |
@@ -203,6 +208,7 @@ Reuses the template `users` table: `id`, `email` (unique), `password_hash`, `rol
 ```text
 roles 1 ---- N candidates 1 ---- N answers 1 ---- 1 scoring_jobs
 questions 1 ---- N answers
+users 1 ---- N candidates (owner_id)
 users 1 ---- N scoring_jobs (overridden_by)
 ```
 
@@ -219,6 +225,7 @@ Conventions:
 | Method + path | Auth | Purpose |
 |---|---|---|
 | `POST /auth/sign-in` | - | HR login |
+| `POST /auth/sign-up` | - | create an HR account (email + password) |
 | `POST /auth/refresh-tokens` | - | rotate refresh token |
 | `POST /auth/sign-out` | - | revoke refresh token |
 
@@ -238,7 +245,27 @@ Response `200`:
 }
 ```
 
-`401` on invalid credentials. `POST /auth/refresh-tokens` takes `{ "refresh_token": "..." }` and returns the same shape. `POST /auth/sign-out` takes `{ "refresh_token": "..." }` and returns `204`.
+`401` on invalid credentials. Emails are stripped and lowercased before lookup, so sign-in casing does not matter. `POST /auth/refresh-tokens` takes `{ "refresh_token": "..." }` and returns the same shape. `POST /auth/sign-out` takes `{ "refresh_token": "..." }` and returns `204`.
+
+`POST /auth/sign-up`
+
+Request:
+```json
+{ "email": "newhr@example.com", "password": "..." }
+```
+
+Response `201` (same shape as sign-in, auto-login):
+```json
+{
+  "user": { "id": 2, "email": "newhr@example.com", "role": "hr" },
+  "access_token": "<jwt>",
+  "refresh_token": "<jwt>"
+}
+```
+
+Emails are stripped and lowercased before persist and uniqueness checks, so `Alex@Acme.com` and `alex@acme.com` are the same account.
+`409` if the email is already registered (including concurrent unique violations).
+`422` if the email is malformed or the password is shorter than the configured minimum (`password_min_length`, default 8).
 
 ### 7.2 Candidate (session token)
 
@@ -317,6 +344,11 @@ Resubmission semantics: submitting again for the same question upserts the singl
 | `POST /hr/scoring-jobs/{job_id}/retry` | jwt(hr) | retry a failed job |
 | `POST /hr/import` | jwt(hr) | import data-pack zip |
 
+All `/hr/*` reads and writes are scoped to the signed-in account's `owner_id`.
+Accessing another account's candidate, answer, audio, or scoring job returns `404` (indistinguishable from "does not exist").
+`POST /hr/candidates` and `POST /hr/import` tag new data with the caller's `owner_id`.
+`GET /hr/roles` candidate counts and `GET /hr/scoring-jobs` reflect only the caller's data.
+
 `GET /hr/roles` - Response `200`:
 
 ```json
@@ -375,7 +407,7 @@ Response `201`:
 }
 ```
 
-`409` if `email` already exists.
+`409` if `email` already exists for the caller's account (unique per owner).
 
 `GET /hr/answers/{answer_id}` - Response `200`:
 
@@ -463,11 +495,12 @@ Response `200` (updated answer shape). `override_reason` is required (non-empty)
 3. Parse `pipeline_log.csv` -> build `candidate_id -> (name, email, role)` for enrichment.
 4. For each `answers/*.json`:
    - Resolve role by name.
-   - Find-or-create the `candidate` by `external_ref = candidate_id`; set `name`/`email` from `pipeline_log.csv` when present, otherwise fall back to a placeholder derived from `candidate_id`. Generate a `session_token`.
-   - Create the `answer` (`external_ref = answer_id`). If `transcript` is present: `answer_type=text`, enqueue `scoring_job(status=queued)`. If `audio_file` is present and `transcript` is null: `answer_type=audio`, store the `.m4a` via `FileStorage`, set `scoring_job(status=needs_a_person)`.
+   - Find-or-create the `candidate` by `external_ref = candidate_id` within the caller's `owner_id`; set `name`/`email` from `pipeline_log.csv` when present, otherwise fall back to a placeholder derived from `candidate_id`. Generate a `session_token`.
+   - Create the `answer` (`external_ref = answer_id`). If `transcript` is present: `answer_type=text`, enqueue `scoring_job(status=queued)`. If `audio_file` is present and `transcript` is null: `answer_type=audio`, store the `.m4a` under `audio/import/{candidate_id}/{answer_id}.m4a`, set `scoring_job(status=needs_a_person)`.
 5. Return the summary above.
 
-Import is idempotent on `external_ref`: re-importing the same pack does not duplicate questions, candidates, or answers.
+Import is idempotent on `external_ref` per owner: re-importing the same pack as the same HR account does not duplicate questions, candidates, or answers.
+A different account importing the same pack gets its own isolated candidates and audio blobs.
 HR import bypasses the candidate submission cap: answer upserts run with no `version < max_submissions` guard (`max_submissions=None`), so a pack can load or replace answers even when `version` already meets `MAX_ANSWER_SUBMISSIONS`.
 
 ## 9. Errors
@@ -492,6 +525,7 @@ All error responses use RFC 7807 problem details, matching the template:
 | 409 | conflict (duplicate email, invalid state transition) |
 | 413 | upload too large |
 | 422 | validation error |
+| 429 | too many sign-in/sign-up requests (rate limited) |
 
 ## 10. Scoring Pipeline
 
@@ -530,6 +564,8 @@ Prompt-injection safety: the system prompt instructs the model that the candidat
 | Rejected audio cannot overwrite accepted audio | Candidate audio keys include `content_hash`; at-cap changed uploads are rejected before save. |
 | HR import ignores the candidate submit cap | Import upserts with `max_submissions=None` (no `version < max_submissions` guard). |
 | App runs from README on a clean machine | `docker-compose.yml` boots Postgres + API; README documents setup/run/test (own spec section, delivered in repo). |
+| Anyone can create an HR account | `POST /auth/sign-up` (email + password) returns `201` with the same tokens as sign-in; `409` on duplicate email, `422` on malformed email or short password. |
+| Each HR account owns only its own data | `candidates.owner_id` scopes every `/hr/*` read and write; cross-account access returns `404`. |
 
 ## 13. Testing & Verification
 

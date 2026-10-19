@@ -123,7 +123,7 @@ class FakeCatalogService:
         self._next_role_id = 1
         self._next_question_id = 1
 
-    async def list_roles(self) -> list[RoleWithCount]:
+    async def list_roles(self, owner_id: int) -> list[RoleWithCount]:
         return [RoleWithCount(role=role, candidate_count=0) for role in self.roles.values()]
 
     async def list_questions(self) -> list[Question]:
@@ -160,10 +160,11 @@ class FakeCatalogService:
 class FakeCandidatesService:
     def __init__(self) -> None:
         self.candidates: dict[str, Candidate] = {}
+        self._by_owner_ref: dict[tuple[int, str], Candidate] = {}
         self._next_id = 1
 
-    async def get_by_external_ref(self, ref: str) -> Candidate | None:
-        return self.candidates.get(ref)
+    async def get_by_external_ref(self, owner_id: int, ref: str) -> Candidate | None:
+        return self._by_owner_ref.get((owner_id, ref))
 
     async def create_candidate(
         self,
@@ -171,6 +172,7 @@ class FakeCandidatesService:
         name: str,
         email: str,
         role_id: int,
+        owner_id: int,
         external_ref: str | None = None,
     ) -> Candidate:
         candidate = Candidate(
@@ -178,23 +180,27 @@ class FakeCandidatesService:
             name=name,
             email=email,
             role_id=role_id,
+            owner_id=owner_id,
             session_token="generated-token",
             external_ref=external_ref,
             created_at=datetime.now(UTC),
         )
         self._next_id += 1
         self.candidates[external_ref] = candidate
+        if external_ref is not None:
+            self._by_owner_ref[(owner_id, external_ref)] = candidate
         return candidate
 
 
 class FakeAnswersService:
     def __init__(self) -> None:
         self.answers: dict[str, Answer] = {}
+        self._by_candidate_ref: dict[tuple[int, str], Answer] = {}
         self._by_key: dict[tuple[int, int], Answer] = {}
         self._next_id = 1
 
-    async def get_by_external_ref(self, ref: str) -> Answer | None:
-        return self.answers.get(ref)
+    async def get_by_external_ref(self, candidate_id: int, ref: str) -> Answer | None:
+        return self._by_candidate_ref.get((candidate_id, ref))
 
     async def import_answer(
         self,
@@ -227,6 +233,7 @@ class FakeAnswersService:
             self._by_key[key] = answer
             if external_ref is not None:
                 self.answers[external_ref] = answer
+                self._by_candidate_ref[(candidate_id, external_ref)] = answer
             return answer, True
         if existing.content_hash == content_hash:
             return existing, False
@@ -275,7 +282,7 @@ def _service() -> tuple[
 async def test_import_parses_questions_and_roles() -> None:
     service, catalog, _, _, _ = _service()
 
-    summary = await service.import_zip(_pack(include_answers=False))
+    summary = await service.import_zip(_pack(include_answers=False), owner_id=1)
 
     assert summary.questions_created == 6
     assert summary.roles_created == 5
@@ -295,7 +302,7 @@ async def test_import_parses_questions_and_roles() -> None:
         "3": "Clear personal contribution.",
         "4": "Clear contribution and measured result.",
     }
-    assert sorted(listed.role.name for listed in await catalog.list_roles()) == [
+    assert sorted(listed.role.name for listed in await catalog.list_roles(1)) == [
         "Backend Engineer",
         "Customer Success Associate",
         "Finance Analyst",
@@ -307,7 +314,7 @@ async def test_import_parses_questions_and_roles() -> None:
 async def test_import_creates_text_candidates_and_answers() -> None:
     service, catalog, candidates, answers, _ = _service()
 
-    summary = await service.import_zip(_pack(include_answers=True))
+    summary = await service.import_zip(_pack(include_answers=True), owner_id=1)
 
     assert summary.candidates_created == 2
     assert summary.answers_imported == 2
@@ -331,7 +338,7 @@ async def test_import_creates_text_candidates_and_answers() -> None:
 async def test_import_audio_is_needs_a_person() -> None:
     service, catalog, candidates, answers, file_storage = _service()
 
-    summary = await service.import_zip(_pack(include_answers=True))
+    summary = await service.import_zip(_pack(include_answers=True), owner_id=1)
 
     assert summary.audio_answers_needing_person == 1
     assert summary.scoring_jobs_queued == 1
@@ -343,18 +350,19 @@ async def test_import_audio_is_needs_a_person() -> None:
     assert created.role_id == sales_role.id
 
     imported = answers.answers["A034"]
+    expected_key = f"audio/import/{created.id}/A034.m4a"
     assert imported.answer_type == "audio"
     assert imported.text is None
-    assert imported.audio_key == "audio/import/A034.m4a"
+    assert imported.audio_key == expected_key
     assert imported.content_hash == sha256(A034_AUDIO).hexdigest()
-    assert file_storage.files["audio/import/A034.m4a"] == A034_AUDIO
+    assert file_storage.files[expected_key] == A034_AUDIO
 
 
 async def test_import_is_idempotent_on_external_ref() -> None:
     service, catalog, candidates, answers, file_storage = _service()
 
-    first = await service.import_zip(_pack())
-    second = await service.import_zip(_pack())
+    first = await service.import_zip(_pack(), owner_id=1)
+    second = await service.import_zip(_pack(), owner_id=1)
 
     assert first.roles_created == 5
     assert first.questions_created == 6
@@ -372,7 +380,81 @@ async def test_import_is_idempotent_on_external_ref() -> None:
     assert len(catalog.roles) == 5
     assert len(candidates.candidates) == 2
     assert len(answers.answers) == 2
-    assert file_storage.save_calls.count("audio/import/A034.m4a") == 1
+    audio_candidate = await candidates.get_by_external_ref(1, "C2057")
+    assert audio_candidate is not None
+    expected_key = f"audio/import/{audio_candidate.id}/A034.m4a"
+    assert file_storage.save_calls.count(expected_key) == 1
+
+
+async def test_import_same_pack_two_owners_isolated() -> None:
+    service, _, candidates, answers, file_storage = _service()
+
+    first = await service.import_zip(_pack(include_answers=True), owner_id=1)
+    second = await service.import_zip(_pack(include_answers=True), owner_id=2)
+
+    assert first.candidates_created == 2
+    assert first.answers_imported == 2
+    assert second.candidates_created == 2
+    assert second.answers_imported == 2
+
+    owner_one = await candidates.get_by_external_ref(1, "C2041")
+    owner_two = await candidates.get_by_external_ref(2, "C2041")
+    assert owner_one is not None and owner_one.owner_id == 1
+    assert owner_two is not None and owner_two.owner_id == 2
+    assert owner_one.id != owner_two.id
+
+    answer_one = await answers.get_by_external_ref(owner_one.id, "A001")
+    answer_two = await answers.get_by_external_ref(owner_two.id, "A001")
+    assert answer_one is not None and answer_one.candidate_id == owner_one.id
+    assert answer_two is not None and answer_two.candidate_id == owner_two.id
+
+    audio_one_candidate = await candidates.get_by_external_ref(1, "C2057")
+    audio_two_candidate = await candidates.get_by_external_ref(2, "C2057")
+    assert audio_one_candidate is not None and audio_two_candidate is not None
+    assert audio_one_candidate.id != audio_two_candidate.id
+
+    audio_one = await answers.get_by_external_ref(audio_one_candidate.id, "A034")
+    audio_two = await answers.get_by_external_ref(audio_two_candidate.id, "A034")
+    assert audio_one is not None and audio_two is not None
+    key_one = f"audio/import/{audio_one_candidate.id}/A034.m4a"
+    key_two = f"audio/import/{audio_two_candidate.id}/A034.m4a"
+    assert audio_one.audio_key == key_one
+    assert audio_two.audio_key == key_two
+    assert key_one != key_two
+    assert file_storage.files[key_one] == A034_AUDIO
+    assert file_storage.files[key_two] == A034_AUDIO
+
+
+async def test_import_audio_different_bytes_do_not_overwrite_across_owners() -> None:
+    service, _, candidates, answers, file_storage = _service()
+    other_audio = b"\xff\xfeother-owner-audio"
+
+    await service.import_zip(_pack(include_answers=True), owner_id=1)
+
+    other_pack = _zip_bytes(
+        {
+            "questions.md": QUESTIONS_MD.encode("utf-8"),
+            "pipeline_log.csv": PIPELINE_CSV.encode("utf-8"),
+            "answers/A034.json": A034_JSON.encode("utf-8"),
+            "answers/A034.m4a": other_audio,
+        }
+    )
+    await service.import_zip(other_pack, owner_id=2)
+
+    candidate_one = await candidates.get_by_external_ref(1, "C2057")
+    candidate_two = await candidates.get_by_external_ref(2, "C2057")
+    assert candidate_one is not None and candidate_two is not None
+
+    answer_one = await answers.get_by_external_ref(candidate_one.id, "A034")
+    answer_two = await answers.get_by_external_ref(candidate_two.id, "A034")
+    assert answer_one is not None and answer_two is not None
+
+    key_one = f"audio/import/{candidate_one.id}/A034.m4a"
+    key_two = f"audio/import/{candidate_two.id}/A034.m4a"
+    assert answer_one.audio_key == key_one
+    assert answer_two.audio_key == key_two
+    assert file_storage.files[key_one] == A034_AUDIO
+    assert file_storage.files[key_two] == other_audio
 
 
 def _retake_pack() -> bytes:
@@ -406,8 +488,8 @@ def _retake_pack() -> bytes:
 async def test_reimport_does_not_overcount_merged_retake() -> None:
     service, _, _, answers, _ = _service()
 
-    first = await service.import_zip(_retake_pack())
-    second = await service.import_zip(_retake_pack())
+    first = await service.import_zip(_retake_pack(), owner_id=1)
+    second = await service.import_zip(_retake_pack(), owner_id=1)
 
     assert first.answers_imported == 2
     assert first.scoring_jobs_queued == 2
@@ -423,7 +505,7 @@ async def test_import_unreadable_zip_raises() -> None:
     service, _, _, _, _ = _service()
 
     with pytest.raises(InvalidImportError):
-        await service.import_zip(b"this is not a zip archive")
+        await service.import_zip(b"this is not a zip archive", owner_id=1)
 
 
 @pytest.mark.parametrize(
@@ -456,7 +538,7 @@ async def test_import_malformed_answer_raises(answer_payload: dict[str, object])
     }
 
     with pytest.raises(InvalidImportError):
-        await service.import_zip(_zip_bytes(files))
+        await service.import_zip(_zip_bytes(files), owner_id=1)
 
 
 async def test_import_empty_transcript_is_text_answer() -> None:
@@ -476,7 +558,7 @@ async def test_import_empty_transcript_is_text_answer() -> None:
         ).encode("utf-8"),
     }
 
-    summary = await service.import_zip(_zip_bytes(files))
+    summary = await service.import_zip(_zip_bytes(files), owner_id=1)
 
     assert summary.answers_imported == 1
     assert summary.scoring_jobs_queued == 1

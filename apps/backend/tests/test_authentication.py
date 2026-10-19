@@ -5,8 +5,11 @@ from sqlalchemy import select
 from api.auth.application.seed import seed_hr_account
 from api.auth.application.service import AuthTokens
 from api.auth.domain.entities import User
+from api.auth.domain.exceptions import EmailAlreadyExistsError
 from api.auth.infrastructure.models import UserModel
+from api.auth.presentation.errors import register_authentication_exception_handlers
 from api.auth.presentation.router import auth_router
+from api.config import Settings
 from database import Base, create_engine, create_session_factory
 from iam import Role, UnauthorizedError, register_iam_exception_handlers
 
@@ -25,6 +28,7 @@ class FakeAuthenticationService:
         self.sign_in_calls: list[tuple[str, str]] = []
         self.refresh_calls: list[str] = []
         self.sign_out_calls: list[str | None] = []
+        self.sign_up_calls: list[tuple[str, str]] = []
 
     async def sign_in(self, email: str, password: str) -> AuthTokens:
         self.sign_in_calls.append((email, password))
@@ -47,11 +51,23 @@ class FakeAuthenticationService:
     async def sign_out(self, refresh_token: str | None) -> None:
         self.sign_out_calls.append(refresh_token)
 
+    async def sign_up(self, email: str, password: str) -> AuthTokens:
+        self.sign_up_calls.append((email, password))
+        if email == EMAIL:
+            raise EmailAlreadyExistsError(email)
+        return AuthTokens(
+            user=User(id=2, email=email, password_hash="hashed", role=Role.HR),
+            access_token="access-token",
+            refresh_token="refresh-token",
+        )
+
 
 def _app(service: FakeAuthenticationService) -> FastAPI:
     app = FastAPI()
     app.state.authentication_service = service
+    app.state.settings = Settings()
     register_iam_exception_handlers(app)
+    register_authentication_exception_handlers(app)
     app.include_router(auth_router)
     return app
 
@@ -119,6 +135,52 @@ async def test_sign_out_204() -> None:
 
     assert response.status_code == 204
     assert service.sign_out_calls == ["refresh-token"]
+
+
+async def test_sign_up_returns_201_and_tokens() -> None:
+    service = FakeAuthenticationService()
+    transport = ASGITransport(app=_app(service))
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/auth/sign-up",
+            json={"email": "new@example.com", "password": "password123"},
+        )
+
+    assert response.status_code == 201
+    assert response.json() == {
+        "user": {"id": 2, "email": "new@example.com", "role": "hr"},
+        "access_token": "access-token",
+        "refresh_token": "refresh-token",
+    }
+    assert service.sign_up_calls == [("new@example.com", "password123")]
+
+
+async def test_sign_up_duplicate_email_409() -> None:
+    service = FakeAuthenticationService()
+    transport = ASGITransport(app=_app(service))
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/auth/sign-up",
+            json={"email": EMAIL, "password": "password123"},
+        )
+
+    assert response.status_code == 409
+    body = response.json()
+    assert body["type"] == "about:blank"
+    assert body["title"] == "Conflict"
+    assert body["status"] == 409
+
+
+async def test_sign_up_malformed_email_422() -> None:
+    service = FakeAuthenticationService()
+    transport = ASGITransport(app=_app(service))
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/auth/sign-up",
+            json={"email": "not-an-email", "password": "password123"},
+        )
+
+    assert response.status_code == 422
 
 
 async def test_seed_hr_account_is_idempotent() -> None:

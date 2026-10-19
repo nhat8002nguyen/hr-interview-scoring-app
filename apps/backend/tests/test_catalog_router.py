@@ -21,7 +21,7 @@ class FakeCatalogService:
     def __init__(self) -> None:
         self.list_roles_calls = 0
 
-    async def list_roles(self) -> list[RoleWithCount]:
+    async def list_roles(self, owner_id: int) -> list[RoleWithCount]:
         self.list_roles_calls += 1
         return [
             RoleWithCount(

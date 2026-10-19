@@ -98,8 +98,8 @@ class FakeScoringService:
         self._retry_result = retry_result
         self._retry_error = retry_error
         self.override_calls: list[tuple[int, int, str, int]] = []
-        self.list_calls: list[str | None] = []
-        self.retry_calls: list[int] = []
+        self.list_calls: list[tuple[str | None, int]] = []
+        self.retry_calls: list[tuple[int, int]] = []
 
     async def override_score(
         self,
@@ -116,12 +116,12 @@ class FakeScoringService:
             raise AssertionError("override_result not configured")
         return self._override_result
 
-    async def list_jobs(self, status: str | None) -> list[ScoringJobSummary]:
-        self.list_calls.append(status)
+    async def list_jobs(self, status: str | None, owner_id: int) -> list[ScoringJobSummary]:
+        self.list_calls.append((status, owner_id))
         return list(self._jobs)
 
-    async def retry(self, job_id: int) -> ScoringJob:
-        self.retry_calls.append(job_id)
+    async def retry(self, job_id: int, owner_id: int) -> ScoringJob:
+        self.retry_calls.append((job_id, owner_id))
         if self._retry_error is not None:
             raise self._retry_error
         if self._retry_result is None:
@@ -130,12 +130,20 @@ class FakeScoringService:
 
 
 class FakeAnswersService:
-    def __init__(self, answers: list[Answer] | None = None) -> None:
+    def __init__(
+        self,
+        answers: list[Answer] | None = None,
+        owners: dict[int, int] | None = None,
+    ) -> None:
         self._answers = {answer.id: answer for answer in answers or []}
+        self._owners = owners or {}
 
-    async def get(self, answer_id: int) -> Answer:
+    async def get_owned(self, answer_id: int, owner_id: int) -> Answer:
         answer = self._answers.get(answer_id)
         if answer is None:
+            raise AnswerNotFoundError(answer_id)
+        candidate_owner = self._owners.get(answer.candidate_id)
+        if candidate_owner is None or candidate_owner != owner_id:
             raise AnswerNotFoundError(answer_id)
         return answer
 
@@ -193,7 +201,7 @@ async def test_override_200() -> None:
         scored_at=SCORED_AT,
     )
     scoring = FakeScoringService(override_result=job)
-    app, jwt_service = _app(scoring, FakeAnswersService([answer]))
+    app, jwt_service = _app(scoring, FakeAnswersService([answer], owners={12: 1}))
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.patch(
@@ -264,7 +272,7 @@ async def test_override_wrong_status_409() -> None:
     scoring = FakeScoringService(
         override_error=ScoringJobInvalidTransitionError(1, "queued"),
     )
-    app, jwt_service = _app(scoring)
+    app, jwt_service = _app(scoring, FakeAnswersService([_answer(31, 12, 1)], owners={12: 1}))
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.patch(
@@ -315,7 +323,7 @@ async def test_list_jobs_filtered() -> None:
             "created_at": CREATED_AT_ISO,
         }
     ]
-    assert scoring.list_calls == ["failed"]
+    assert scoring.list_calls == [("failed", 1)]
 
 
 async def test_retry_200_and_409() -> None:
@@ -343,7 +351,7 @@ async def test_retry_200_and_409() -> None:
         "last_error": None,
         "scored_at": None,
     }
-    assert scoring.retry_calls == [1]
+    assert scoring.retry_calls == [(1, 1)]
 
     conflict_scoring = FakeScoringService(
         retry_error=ScoringJobInvalidTransitionError(2, "scored"),
@@ -374,6 +382,36 @@ async def test_retry_200_and_409() -> None:
 
     assert missing.status_code == 404
     assert missing.json()["status"] == 404
+
+
+async def test_cross_tenant_scoring_job_retry_is_404() -> None:
+    scoring = FakeScoringService(retry_error=ScoringJobNotFoundError(7))
+    app, jwt_service = _app(scoring)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/hr/scoring-jobs/7/retry",
+            headers=_headers(jwt_service),
+        )
+
+    assert response.status_code == 404
+    assert response.json()["status"] == 404
+    assert scoring.retry_calls == [(7, 1)]
+
+
+async def test_scoring_jobs_list_scopes_by_owner() -> None:
+    scoring = FakeScoringService(jobs=[])
+    app, jwt_service = _app(scoring)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/hr/scoring-jobs",
+            headers=_headers(jwt_service),
+        )
+
+    assert response.status_code == 200
+    assert response.json() == []
+    assert scoring.list_calls == [(None, 1)]
 
 
 async def test_requires_authentication() -> None:

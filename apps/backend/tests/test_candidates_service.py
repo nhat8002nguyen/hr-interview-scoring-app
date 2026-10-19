@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from hashlib import sha256
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from api.candidates.application.service import AnswersService, CandidatesService
 from api.candidates.domain.entities import Answer, Candidate
@@ -14,17 +15,30 @@ from api.catalog.domain.entities import Question
 from api.catalog.domain.exceptions import QuestionNotFoundError
 
 
+class _UniqueViolation(Exception):
+    pgcode = "23505"
+
+
 class FakeCandidateRepository:
-    def __init__(self, candidates: list[Candidate] | None = None) -> None:
+    def __init__(
+        self,
+        candidates: list[Candidate] | None = None,
+        *,
+        fail_add_with_unique: bool = False,
+    ) -> None:
         self._candidates = {candidate.id: candidate for candidate in candidates or []}
         self._next_id = max(self._candidates, default=0) + 1
+        self._fail_add_with_unique = fail_add_with_unique
 
     async def add(self, candidate: Candidate) -> Candidate:
+        if self._fail_add_with_unique:
+            raise IntegrityError("INSERT", {}, _UniqueViolation())
         stored = Candidate(
             id=self._next_id,
             name=candidate.name,
             email=candidate.email,
             role_id=candidate.role_id,
+            owner_id=candidate.owner_id,
             session_token=candidate.session_token,
             external_ref=candidate.external_ref,
             created_at=candidate.created_at,
@@ -36,8 +50,11 @@ class FakeCandidateRepository:
     async def get(self, candidate_id: int) -> Candidate | None:
         return self._candidates.get(candidate_id)
 
-    async def get_by_email(self, email: str) -> Candidate | None:
-        return next((c for c in self._candidates.values() if c.email == email), None)
+    async def get_by_email(self, owner_id: int, email: str) -> Candidate | None:
+        return next(
+            (c for c in self._candidates.values() if c.email == email and c.owner_id == owner_id),
+            None,
+        )
 
     async def get_by_session_token(self, session_token: str) -> Candidate | None:
         return next(
@@ -45,17 +62,25 @@ class FakeCandidateRepository:
             None,
         )
 
-    async def get_by_external_ref(self, external_ref: str) -> Candidate | None:
+    async def get_by_external_ref(self, owner_id: int, external_ref: str) -> Candidate | None:
         return next(
-            (c for c in self._candidates.values() if c.external_ref == external_ref),
+            (
+                c
+                for c in self._candidates.values()
+                if c.external_ref == external_ref and c.owner_id == owner_id
+            ),
             None,
         )
 
-    async def list_by_role(self, role_id: int) -> list[Candidate]:
-        return [c for c in self._candidates.values() if c.role_id == role_id]
+    async def list_by_role(self, owner_id: int, role_id: int) -> list[Candidate]:
+        return [
+            c for c in self._candidates.values() if c.role_id == role_id and c.owner_id == owner_id
+        ]
 
-    async def count_by_role(self, role_id: int) -> int:
-        return sum(1 for c in self._candidates.values() if c.role_id == role_id)
+    async def count_by_role(self, owner_id: int, role_id: int) -> int:
+        return sum(
+            1 for c in self._candidates.values() if c.role_id == role_id and c.owner_id == owner_id
+        )
 
 
 class FakeAnswerRepository:
@@ -122,9 +147,13 @@ class FakeAnswerRepository:
     async def list_for_candidate(self, candidate_id: int) -> list[Answer]:
         return [a for a in self._answers.values() if a.candidate_id == candidate_id]
 
-    async def get_by_external_ref(self, external_ref: str) -> Answer | None:
+    async def get_by_external_ref(self, candidate_id: int, external_ref: str) -> Answer | None:
         return next(
-            (a for a in self._answers.values() if a.external_ref == external_ref),
+            (
+                a
+                for a in self._answers.values()
+                if a.candidate_id == candidate_id and a.external_ref == external_ref
+            ),
             None,
         )
 
@@ -207,6 +236,7 @@ async def test_create_candidate_generates_token_and_conflicts_on_email() -> None
         name="Ada",
         email="ada@example.com",
         role_id=2,
+        owner_id=1,
     )
 
     assert created.session_token == "token-1"
@@ -217,6 +247,54 @@ async def test_create_candidate_generates_token_and_conflicts_on_email() -> None
             name="Ada",
             email="ada@example.com",
             role_id=2,
+            owner_id=1,
+        )
+
+
+async def test_candidate_email_is_unique_per_owner_not_globally() -> None:
+    candidates = FakeCandidateRepository()
+    service = CandidatesService(
+        lambda: FakeCandidatesUnitOfWork(candidates, FakeAnswerRepository())
+    )
+
+    first = await service.create_candidate(
+        name="Ada",
+        email="ada@example.com",
+        role_id=2,
+        owner_id=1,
+    )
+    other = await service.create_candidate(
+        name="Ada",
+        email="ada@example.com",
+        role_id=2,
+        owner_id=2,
+    )
+
+    assert first.id != other.id
+    assert (first.owner_id, other.owner_id) == (1, 2)
+
+    with pytest.raises(CandidateAlreadyExistsError):
+        await service.create_candidate(
+            name="Ada",
+            email="ada@example.com",
+            role_id=2,
+            owner_id=1,
+        )
+
+
+async def test_create_candidate_unique_violation_on_add_maps_to_conflict() -> None:
+    candidates = FakeCandidateRepository(fail_add_with_unique=True)
+    service = CandidatesService(
+        lambda: FakeCandidatesUnitOfWork(candidates, FakeAnswerRepository()),
+        lambda: "token-race",
+    )
+
+    with pytest.raises(CandidateAlreadyExistsError):
+        await service.create_candidate(
+            name="Ada",
+            email="race@example.com",
+            role_id=2,
+            owner_id=1,
         )
 
 

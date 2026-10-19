@@ -6,7 +6,7 @@ from fastapi.exceptions import HTTPException
 from api.importing.application.service import ImportSummary
 from api.importing.presentation.dependencies import ImportServiceDep
 from api.importing.presentation.schemas import ImportSummaryResponse
-from iam import AuthType, Role, require_auth, require_roles
+from iam import AuthType, CurrentUserDep, Role, require_auth, require_roles
 
 import_router = APIRouter(prefix="/hr", tags=["hr"])
 
@@ -26,6 +26,7 @@ _require_hr = [
 async def import_pack(
     importer: ImportServiceDep,
     file: Annotated[UploadFile, File()],
+    user: CurrentUserDep,
 ) -> ImportSummaryResponse:
     data = await file.read()
     if len(data) > MAX_IMPORT_BYTES:
@@ -33,7 +34,7 @@ async def import_pack(
             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail="import pack exceeds the maximum size",
         )
-    summary = await importer.import_zip(data)
+    summary = await importer.import_zip(data, owner_id=user.sub)
     return _to_response(summary)
 
 

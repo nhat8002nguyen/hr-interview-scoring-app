@@ -37,7 +37,7 @@ class FakeImportService:
         self._error = error
         self.data: bytes | None = None
 
-    async def import_zip(self, data: bytes) -> ImportSummary:
+    async def import_zip(self, data: bytes, owner_id: int) -> ImportSummary:
         self.data = data
         if self._error is not None:
             raise self._error
@@ -159,7 +159,7 @@ class _MinimalCatalog:
     async def list_questions(self) -> list[Question]:
         return []
 
-    async def list_roles(self) -> list[RoleWithCount]:
+    async def list_roles(self, owner_id: int) -> list[RoleWithCount]:
         return [RoleWithCount(role=role, candidate_count=0) for role in self._roles.values()]
 
     async def ensure_role(self, name: str) -> CatalogRole:

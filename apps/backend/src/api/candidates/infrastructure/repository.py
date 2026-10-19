@@ -47,6 +47,7 @@ class SqlAlchemyCandidateRepository:
             name=candidate.name,
             email=candidate.email,
             role_id=candidate.role_id,
+            owner_id=candidate.owner_id,
             session_token=candidate.session_token,
             external_ref=candidate.external_ref,
             created_at=candidate.created_at,
@@ -59,9 +60,12 @@ class SqlAlchemyCandidateRepository:
         row = await self._session.get(CandidateModel, candidate_id)
         return None if row is None else self._to_candidate(row)
 
-    async def get_by_email(self, email: str) -> Candidate | None:
+    async def get_by_email(self, owner_id: int, email: str) -> Candidate | None:
         row = await self._session.scalar(
-            select(CandidateModel).where(CandidateModel.email == email)
+            select(CandidateModel).where(
+                CandidateModel.owner_id == owner_id,
+                CandidateModel.email == email,
+            )
         )
         return None if row is None else self._to_candidate(row)
 
@@ -71,18 +75,24 @@ class SqlAlchemyCandidateRepository:
         )
         return None if row is None else self._to_candidate(row)
 
-    async def get_by_external_ref(self, external_ref: str) -> Candidate | None:
+    async def get_by_external_ref(self, owner_id: int, external_ref: str) -> Candidate | None:
         row = await self._session.scalar(
-            select(CandidateModel).where(CandidateModel.external_ref == external_ref)
+            select(CandidateModel).where(
+                CandidateModel.owner_id == owner_id,
+                CandidateModel.external_ref == external_ref,
+            )
         )
         return None if row is None else self._to_candidate(row)
 
-    async def list_by_role(self, role_id: int) -> list[Candidate]:
+    async def list_by_role(self, owner_id: int, role_id: int) -> list[Candidate]:
         rows = (
             (
                 await self._session.execute(
                     select(CandidateModel)
-                    .where(CandidateModel.role_id == role_id)
+                    .where(
+                        CandidateModel.owner_id == owner_id,
+                        CandidateModel.role_id == role_id,
+                    )
                     .order_by(CandidateModel.id)
                 )
             )
@@ -91,11 +101,14 @@ class SqlAlchemyCandidateRepository:
         )
         return [self._to_candidate(row) for row in rows]
 
-    async def count_by_role(self, role_id: int) -> int:
+    async def count_by_role(self, owner_id: int, role_id: int) -> int:
         count = await self._session.scalar(
             select(func.count())
             .select_from(CandidateModel)
-            .where(CandidateModel.role_id == role_id)
+            .where(
+                CandidateModel.owner_id == owner_id,
+                CandidateModel.role_id == role_id,
+            )
         )
         return count or 0
 
@@ -105,6 +118,7 @@ class SqlAlchemyCandidateRepository:
             name=row.name,
             email=row.email,
             role_id=row.role_id,
+            owner_id=row.owner_id,
             session_token=row.session_token,
             external_ref=row.external_ref,
             created_at=row.created_at,
@@ -146,9 +160,12 @@ class SqlAlchemyAnswerRepository:
         )
         return [self._to_answer(row) for row in rows]
 
-    async def get_by_external_ref(self, external_ref: str) -> Answer | None:
+    async def get_by_external_ref(self, candidate_id: int, external_ref: str) -> Answer | None:
         row = await self._session.scalar(
-            select(AnswerModel).where(AnswerModel.external_ref == external_ref)
+            select(AnswerModel).where(
+                AnswerModel.candidate_id == candidate_id,
+                AnswerModel.external_ref == external_ref,
+            )
         )
         return None if row is None else self._to_answer(row)
 

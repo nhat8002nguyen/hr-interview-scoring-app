@@ -200,7 +200,7 @@ class ImportService:
         self._answers = answers
         self._file_storage = file_storage
 
-    async def import_zip(self, data: bytes) -> ImportSummary:
+    async def import_zip(self, data: bytes, owner_id: int) -> ImportSummary:
         questions_md, pipeline_csv, records = _read_pack(data)
 
         question_specs, open_roles = _parse_questions(questions_md)
@@ -220,7 +220,7 @@ class ImportService:
             )
 
         role_by_name = {
-            listed.role.name: listed.role for listed in await self._catalog.list_roles()
+            listed.role.name: listed.role for listed in await self._catalog.list_roles(owner_id)
         }
         roles_created = 0
         for name in role_names:
@@ -248,13 +248,14 @@ class ImportService:
             if question is None:
                 raise InvalidImportError(f"unknown question code {question_code!r}")
 
-            candidate = await self._candidates.get_by_external_ref(candidate_ref)
+            candidate = await self._candidates.get_by_external_ref(owner_id, candidate_ref)
             if candidate is None:
                 candidate = await self._create_candidate(
                     candidate_ref,
                     payload,
                     pipeline,
                     role_by_name,
+                    owner_id,
                 )
                 candidates_created += 1
 
@@ -262,7 +263,7 @@ class ImportService:
             audio_file = payload.get("audio_file")
 
             if isinstance(transcript, str):
-                if await self._answers.get_by_external_ref(answer_id) is not None:
+                if await self._answers.get_by_external_ref(candidate.id, answer_id) is not None:
                     continue
                 _, changed = await self._answers.import_answer(
                     candidate.id,
@@ -278,9 +279,9 @@ class ImportService:
                     answers_imported += 1
                     scoring_jobs_queued += 1
             elif transcript is None and audio_file and record.audio_bytes is not None:
-                if await self._answers.get_by_external_ref(answer_id) is not None:
+                if await self._answers.get_by_external_ref(candidate.id, answer_id) is not None:
                     continue
-                key = f"audio/import/{answer_id}.m4a"
+                key = f"audio/import/{candidate.id}/{answer_id}.m4a"
                 await self._file_storage.save(key, record.audio_bytes)
                 _, changed = await self._answers.import_answer(
                     candidate.id,
@@ -311,6 +312,7 @@ class ImportService:
         payload: dict[str, object],
         pipeline: dict[str, tuple[str, str, str]],
         role_by_name: dict[str, Role],
+        owner_id: int,
     ) -> Candidate:
         pipeline_row = pipeline.get(candidate_ref)
         if pipeline_row is not None:
@@ -329,5 +331,6 @@ class ImportService:
             name=name,
             email=email,
             role_id=role.id,
+            owner_id=owner_id,
             external_ref=candidate_ref,
         )

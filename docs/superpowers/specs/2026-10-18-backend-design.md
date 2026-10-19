@@ -8,6 +8,9 @@
 **Database:** PostgreSQL 18
 **LLM:** DeepSeek (adapter-swappable)
 
+> **Amended by `2026-10-19-hr-self-registration-and-tenancy-design.md`.**
+> That spec adds HR self-registration and per-account tenancy and is authoritative where it changes this document.
+
 ## 1. Goal
 
 Define the backend service that implements the API contract in `2026-10-18-api-contract-design.md`.
@@ -35,7 +38,7 @@ Out of scope (phase 2, unchanged from the contract): audio transcription/scoring
 | App package | `api` (import path `api.main:app`, FastAPI title "talotrace-api") |
 | API style | JSON over HTTP, resource-oriented REST, no version prefix in phase 1 |
 | Error format | RFC 7807 Problem Details (`{"type","title","status","detail"}`) |
-| HR auth | Bearer JWT via `libs/iam`, role `hr`, one seeded HR account |
+| HR auth | Bearer JWT via `libs/iam`, role `hr`, seeded HR account plus self-service sign-up |
 | Candidate auth | Opaque `secrets.token_urlsafe(32)` token in `X-Candidate-Token` header |
 | ID scheme | Integer primary keys; `session_token` is the only secret (not a primary key) |
 | Module layering | Pragmatic Clean Architecture per feature module (`domain`, `application`, `infrastructure`, `presentation`) |
@@ -121,7 +124,7 @@ Five feature modules plus `health`, each following the template's four-layer str
 
 | Module | Owns tables / entities | Endpoints | Depends on |
 |---|---|---|---|
-| `auth` | `users`, `refresh_tokens` | `POST /auth/sign-in`, `POST /auth/refresh-tokens`, `POST /auth/sign-out` | `iam` |
+| `auth` | `users`, `refresh_tokens` | `POST /auth/sign-in`, `POST /auth/sign-up`, `POST /auth/refresh-tokens`, `POST /auth/sign-out` | `iam` |
 | `catalog` | `roles`, `questions` | `GET /hr/roles` | `candidates` (candidate counts) |
 | `candidates` | `candidates`, `answers` | `GET /candidate/interview`; `POST /candidate/interview/answers/{id}` and `.../{id}/audio`; `GET /hr/roles/{id}/candidates`; `GET /hr/candidates/{id}`; `POST /hr/candidates`; `GET /hr/answers/{id}`; `GET /hr/answers/{id}/audio` | `catalog`, `scoring` (enqueue + read) |
 | `scoring` | `scoring_jobs` | `PATCH /hr/answers/{id}/score`; `GET /hr/scoring-jobs`; `POST /hr/scoring-jobs/{id}/retry` | `catalog`, `candidates` (read), LLM |
@@ -139,12 +142,21 @@ These are wired as services on `app.state` to avoid module-level import cycles.
 
 - `domain/entities.py`: `User` (id, email, password_hash, role).
 - `domain/repositories.py`: `UserRepository` protocol (add, get, get_by_email).
-- `domain/exceptions.py`: `UserNotFoundError`.
+- `domain/exceptions.py`: `UserNotFoundError`, `EmailAlreadyExistsError`, `WeakPasswordError`.
 - `infrastructure/models.py`: `UserModel` (`users`), `RefreshTokenModel` (`refresh_tokens`), copied from the template minus groups and api keys.
 - `infrastructure/repository.py`: `SqlAlchemyUserRepository`, `TransactionalRefreshTokenStorage`.
-- `application/service.py`: `AuthenticationService` with `sign_in`, `refresh`, `sign_out` only (no sign-up).
+- `application/service.py`: `AuthenticationService` with `sign_in`, `sign_up`, `refresh`, `sign_out`.
   Reuses `JwtService`, `BcryptHashingService`, and `RefreshTokenStorageProtocol`.
 - `presentation/{router,schemas,dependencies}.py`: auth router under `/auth`, RFC 7807 error handlers.
+
+`sign_in` and `sign_up` normalize the email (strip whitespace, lowercase) before lookup and persist.
+`sign_up(email, password)` checks the email is not already registered, hashes the password, adds the user with `role = Role.HR`, and issues tokens through the same `_issue_tokens` path as sign-in.
+It raises `EmailAlreadyExistsError` (mapped to `409`) when the email is registered or when insert hits a unique-violation `IntegrityError`, and `WeakPasswordError` (mapped to `422`) when the password is shorter than `password_min_length` (default 8).
+The password minimum is enforced in the service, not in the Pydantic schema.
+`CandidatesService.create_candidate` maps the same unique-violation case on `(owner_id, email)` to `CandidateAlreadyExistsError`.
+
+Sign-in and sign-up are both guarded by an in-process fixed-window rate limiter keyed by client IP (and, for sign-up, by email).
+It is configured via `auth_rate_limit` and `auth_rate_limit_window_seconds` and returns `429` when exceeded.
 
 The seeded HR account is created idempotently at startup: bcrypt-hash `seed_hr_password`, role `hr`, email `seed_hr_email`, skipping creation when that email already exists.
 
@@ -155,18 +167,22 @@ The seeded HR account is created idempotently at startup: bcrypt-hash `seed_hr_p
 - `domain/exceptions.py`: `RoleNotFoundError`, `QuestionNotFoundError`.
 - `infrastructure/models.py`: `RoleModel` (`roles`), `QuestionModel` (`questions`).
 - `infrastructure/repository.py`: SQLAlchemy implementations.
-- `application/service.py`: `CatalogService` (list roles with candidate counts, resolve question by id or code, ensure-role-exists, upsert question).
+- `application/service.py`: `CatalogService` (list roles with per-owner candidate counts, resolve question by id or code, ensure-role-exists, upsert question).
 - `presentation/router.py`: `GET /hr/roles`.
 
 ### 6.4 `candidates`
 
-- `domain/entities.py`: `Candidate` (id, name, email, role_id, session_token, external_ref, created_at), `Answer` (id, candidate_id, question_id, answer_type, text, audio_key, content_hash, version, external_ref, submitted_at).
-- `domain/repositories.py`: `CandidateRepository` (add, get, get_by_email, get_by_session_token, get_by_external_ref, list_by_role), `AnswerRepository` (upsert, get_active, get, list_for_candidate, get_by_external_ref).
+- `domain/entities.py`: `Candidate` (id, name, email, role_id, owner_id, session_token, external_ref, created_at), `Answer` (id, candidate_id, question_id, answer_type, text, audio_key, content_hash, version, external_ref, submitted_at).
+- `domain/repositories.py`: `CandidateRepository` (add, get, get_by_email(owner_id, ...), get_by_session_token, get_by_external_ref(owner_id, ...), list_by_role(owner_id, ...), count_by_role(owner_id, ...)), `AnswerRepository` (upsert, get_active, get, list_for_candidate, get_by_external_ref).
 - `domain/exceptions.py`: `CandidateNotFoundError`, `CandidateAlreadyExistsError`, `AnswerNotFoundError`.
 - `infrastructure/models.py`: `CandidateModel` (`candidates`), `AnswerModel` (`answers`).
 - `infrastructure/repository.py`: SQLAlchemy implementations, including the atomic answer upsert in section 9.
-- `application/service.py`: `CandidatesService` (create candidate, resolve by session token, interview context) and `AnswersService` (submit text/audio, resubmission, read models).
+- `application/service.py`: `CandidatesService` (create candidate, resolve by session token, interview context, get owned candidate) and `AnswersService` (submit text/audio, resubmission, read models).
 - `presentation/`: `candidate_router` (session auth) and `hr_router` (JWT `hr`), each with its own schemas and the `require_candidate` dependency.
+
+Ownership is threaded through `CandidatesService` and `AnswersService`: every HR read and write passes the caller's `owner_id`.
+`get_owned_candidate(candidate_id, owner_id)` and `get_owned(answer_id, owner_id)` resolve ownership through the candidate and raise `CandidateNotFoundError` / `AnswerNotFoundError` (mapped to `404`) unless the row belongs to the caller.
+This keeps the ownership check in the service read path, so a future endpoint defaults to scoped behavior.
 
 The `require_candidate` dependency reads the `X-Candidate-Token` header, resolves the candidate by `session_token`, and raises `401` for a missing or unknown token.
 It never touches `libs/iam`.
@@ -249,10 +265,11 @@ It never touches `libs/iam`.
 |---|---|---|
 | id | int PK | |
 | name | str nullable | |
-| email | str unique | HR keys creation off it |
+| email | str | unique per owner (`owner_id`, `email`) |
 | role_id | int FK -> roles.id | |
-| session_token | str unique indexed | unguessable secret |
-| external_ref | str nullable indexed | data-pack `candidate_id` |
+| owner_id | int FK -> users.id | NOT NULL, indexed; scopes each candidate to its HR account |
+| session_token | str unique indexed | unguessable secret; globally unique so a link resolves regardless of owner |
+| external_ref | str nullable indexed | data-pack `candidate_id`; unique per owner (`owner_id`, `external_ref`) |
 | created_at | timestamptz | |
 
 `answers` (candidates):
@@ -299,6 +316,7 @@ Relationships mirror the contract: `roles 1-N candidates 1-N answers 1-1 scoring
 
 `/hr/*` routers declare `dependencies=[Depends(require_auth(AuthType.JWT)), Depends(require_roles(Role.HR))]`.
 `POST /auth/sign-in` returns `{user, access_token, refresh_token}` with a 1h access token and a single-use rotating refresh token, exactly as the contract specifies.
+`POST /auth/sign-up` creates an HR account and returns the same shape with `201` (see section 6.2); `409` on duplicate email, `422` on malformed email or short password.
 `POST /auth/refresh-tokens` validates and consumes the refresh token's jti.
 `POST /auth/sign-out` revokes the refresh token and returns `204`.
 Invalid credentials, refresh reuse, and non-`hr` roles map to `401`/`403` via the IAM exception handlers.
@@ -308,6 +326,14 @@ Invalid credentials, refresh reuse, and non-`hr` roles map to `401`/`403` via th
 Candidate routes use `require_candidate`, a custom dependency independent of `libs/iam`.
 It reads `X-Candidate-Token`, resolves the candidate by `session_token`, and raises `401` on a missing or unknown token.
 Every candidate endpoint scopes its reads to that candidate only; grades and grading guides are never serialized in the candidate area.
+
+### 8.3 Ownership scoping
+
+Every HR endpoint threads the caller's `owner_id` (from `ActiveUserData.sub` via `CurrentUserDep`) into its service call.
+Candidates, answers, and scoring jobs are resolved through `get_owned_candidate` / `get_owned`, which raise `404` for both "not yours" and "does not exist".
+`POST /hr/candidates` and `POST /hr/import` tag new rows with the caller's `owner_id`.
+`GET /hr/roles` candidate counts and `GET /hr/scoring-jobs` are filtered to the caller.
+Candidate-facing `/candidate/*` routes are unchanged and resolve by session token globally.
 
 ## 9. Resubmission Correctness
 
@@ -380,16 +406,20 @@ The reply is schema-validated so only a `score` and `reasoning` can be stored, d
 
 ## 11. Data-Pack Import
 
-`POST /hr/import` accepts the `business-systems-pack.zip` and orchestrates:
+`POST /hr/import` accepts the `business-systems-pack.zip` and orchestrates with the caller's `owner_id`:
 
 1. Parse `questions.md` and upsert the six questions (prompt + grading guide from the 1-4 bullets).
 2. Ensure the five roles from the `Open roles` list exist.
 3. Parse `pipeline_log.csv` into `candidate_id -> (name, email, role)`.
-4. For each `answers/*.json`, resolve the role by name, find-or-create the candidate by `external_ref = candidate_id` (set `name`/`email` from the pipeline log, else a placeholder from `candidate_id`, and generate a `session_token`), then create the answer by `external_ref = answer_id`.
-   Transcript answers enqueue a `queued` scoring job; audio-only answers store the `.m4a` and create a `needs_a_person` job.
+4. For each `answers/*.json`, resolve the role by name, find-or-create the candidate by `external_ref = candidate_id` within the caller's `owner_id` (set `name`/`email` from the pipeline log, else a placeholder from `candidate_id`, and generate a `session_token`), then create the answer by `external_ref = answer_id`.
+   Transcript answers enqueue a `queued` scoring job; audio-only answers store the `.m4a` under `audio/import/{candidate_id}/{answer_id}.m4a` and create a `needs_a_person` job.
 5. Return the summary counts.
 
-Import is idempotent on `external_ref`: re-importing the same pack does not duplicate questions, candidates, or answers.
+`roles` and `questions` upsert globally and idempotently, exactly as today.
+Candidates and answers are tagged with the caller's `owner_id`.
+
+Import is idempotent on `external_ref` per owner: re-importing the same pack as the same HR account does not duplicate questions, candidates, or answers.
+A different account importing the same pack gets its own isolated copies (including audio blobs).
 Unreadable zip or unexpected layout returns `400`; oversized files return `413`.
 
 ## 12. Cross-Cutting Concerns
@@ -412,6 +442,9 @@ Unreadable zip or unexpected layout returns `400`; oversized files return `413`.
 | `audio_storage_dir` | `/tmp/talotrace-audio` | local volume in phase 1 |
 | `seed_hr_email` | `hr@talotrace.ai` | |
 | `seed_hr_password` | - | required to seed the HR account |
+| `password_min_length` | `8` | minimum sign-up password length (enforced in the service) |
+| `auth_rate_limit` | `60` | max sign-in/sign-up requests per window |
+| `auth_rate_limit_window_seconds` | `60.0` | rate-limit window in seconds |
 
 `jwt_secret`, `jwt_algorithm`, `jwt_access_token_ttl_seconds`, and `jwt_refresh_token_ttl_seconds` are inherited from `JwtSettings`.
 
@@ -427,10 +460,22 @@ It registers the IAM exception handlers plus per-module RFC 7807 handlers mappin
 
 ## 13. Migrations and Seeding
 
-Alembic migrations define the seven tables with the columns, indexes, and constraints in section 7, including the `(candidate_id, question_id)` unique key and the `external_ref` unique index on both `candidates` and `answers`.
+Alembic migrations define the tables with the columns, indexes, and constraints in section 7, including the `(candidate_id, question_id)` unique key and the `external_ref` unique index on `answers`.
+The initial revision `20261018_0001` defines the base schema.
+
+A follow-up revision `20261019_0002_hr_tenancy` (down revision `20261018_0001`) adds tenancy:
+
+1. Adds `candidates.owner_id` (nullable `Integer`, `FK users.id`).
+2. Backfills every candidate to the sole existing HR user.
+3. Sets `owner_id` to `NOT NULL`.
+4. Replaces the global unique `email` and `external_ref` indexes with per-owner unique constraints `(owner_id, email)` and `(owner_id, external_ref)`.
+5. Adds indexes on `owner_id` and `(owner_id, role_id)`.
+
+`session_token` stays globally unique.
+
 Startup seeds only the HR account (bcrypt, idempotent on email).
 Roles and questions are created by `POST /hr/import`.
-The README documents the clean-machine flow: migrate, run, sign in, import the pack.
+The README documents the clean-machine flow: migrate, run, sign in (or sign up), import the pack.
 
 ## 14. Testing and Verification
 

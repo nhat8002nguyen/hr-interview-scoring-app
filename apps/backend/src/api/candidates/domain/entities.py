@@ -8,6 +8,7 @@ class Candidate:
     name: str | None
     email: str
     role_id: int
+    owner_id: int
     session_token: str
     external_ref: str | None
     created_at: datetime

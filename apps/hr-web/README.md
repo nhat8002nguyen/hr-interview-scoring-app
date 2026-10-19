@@ -1,12 +1,14 @@
 # Talotrace HR Web
 
 The HR area for the Talotrace interview-scoring app.
-HR signs in, browses candidates per role, sees each answer with the LLM's suggested score and reasoning, overrides scores with a required reason, watches scoring jobs, retries failures, imports the data pack, and creates candidates.
+Anyone can create an HR account from the sign-up page, or sign in with an existing account.
+HR then browses candidates per role, sees each answer with the LLM's suggested score and reasoning, overrides scores with a required reason, watches scoring jobs, retries failures, imports the data pack, and creates candidates.
+Each signed-in account only sees its own candidates and related data.
 
 ## Prerequisites
 
 - Node.js 20.9+
-- A running Talotrace API (`apps/api`, FastAPI) backed by PostgreSQL, per the accepted API contract.
+- A running Talotrace API (`apps/backend`, FastAPI) backed by PostgreSQL, per the accepted API contract.
 - The data pack imported, or available to import through the UI.
 
 ## Configuration
@@ -33,7 +35,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3002 and sign in with the seeded HR account.
+Open http://localhost:3002, sign in with the seeded HR account, or create an account at `/sign-up`.
 
 ## Test
 
@@ -59,7 +61,7 @@ Optional E2E environment variables: `E2E_HR_EMAIL`, `E2E_HR_PASSWORD`, `E2E_PACK
 - The route handlers read the `hr_access` cookie, attach it as a Bearer token, and call the FastAPI API.
 - On `401` they rotate the refresh token once (single-flight) and retry.
 - Pages are client components that fetch `/api/*` and render loading, empty, and error states.
-- Pages: `/sign-in`, `/roles`, `/roles/[roleId]`, `/candidates/[candidateId]`, `/candidates/new`, `/answers/[answerId]`, `/scoring-jobs`, `/import`.
+- Pages: `/sign-in`, `/sign-up`, `/roles`, `/roles/[roleId]`, `/candidates/[candidateId]`, `/candidates/new`, `/answers/[answerId]`, `/scoring-jobs`, `/import`.
 
 ## Not built (phase 2)
 

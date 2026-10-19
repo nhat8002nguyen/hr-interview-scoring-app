@@ -81,18 +81,18 @@ class FakeCatalogUnitOfWork:
 
 
 class FakeRoleCandidateCounter:
-    def __init__(self, counts: dict[int, int] | None = None) -> None:
+    def __init__(self, counts: dict[tuple[int, int], int] | None = None) -> None:
         self._counts = counts or {}
 
-    async def count_by_role(self, role_id: int) -> int:
-        return self._counts.get(role_id, 0)
+    async def count_by_role(self, role_id: int, owner_id: int) -> int:
+        return self._counts.get((owner_id, role_id), 0)
 
 
 def _service(
     *,
     roles: list[Role] | None = None,
     questions: list[Question] | None = None,
-    counts: dict[int, int] | None = None,
+    counts: dict[tuple[int, int], int] | None = None,
 ) -> tuple[CatalogService, FakeRoleRepository, FakeQuestionRepository]:
     role_repository = FakeRoleRepository(roles)
     question_repository = FakeQuestionRepository(questions)
@@ -159,11 +159,20 @@ async def test_upsert_question_updates_by_code() -> None:
 
 async def test_list_roles_includes_counts() -> None:
     roles = [Role(id=1, name="Backend Engineer"), Role(id=2, name="Sales Executive")]
-    service, _, _ = _service(roles=roles, counts={1: 3, 2: 0})
+    service, _, _ = _service(roles=roles, counts={(1, 1): 3, (1, 2): 0})
 
-    result = await service.list_roles()
+    result = await service.list_roles(owner_id=1)
 
     assert result == [
         RoleWithCount(role=roles[0], candidate_count=3),
         RoleWithCount(role=roles[1], candidate_count=0),
     ]
+
+
+async def test_roles_candidate_count_scoped_to_owner() -> None:
+    roles = [Role(id=1, name="Backend Engineer")]
+    service, _, _ = _service(roles=roles, counts={(1, 1): 3, (2, 1): 2})
+
+    result = await service.list_roles(owner_id=1)
+
+    assert result == [RoleWithCount(role=roles[0], candidate_count=3)]

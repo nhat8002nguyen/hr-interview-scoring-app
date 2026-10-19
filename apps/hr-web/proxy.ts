@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { ACCESS_COOKIE_NAME } from "@/lib/auth/constants";
 
-const PUBLIC_PREFIXES = ["/sign-in", "/api", "/_next"];
+const PUBLIC_PREFIXES = ["/sign-in", "/sign-up", "/api", "/_next"];
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -18,5 +18,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api|_next|sign-in|favicon.ico).*)"],
+  matcher: ["/((?!api|_next|sign-in|sign-up|favicon.ico).*)"],
 };

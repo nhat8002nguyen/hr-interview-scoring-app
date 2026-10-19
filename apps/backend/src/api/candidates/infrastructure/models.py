@@ -1,6 +1,15 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.catalog.infrastructure.models import QuestionModel, RoleModel  # noqa: F401
@@ -9,15 +18,22 @@ from database import Base
 
 class CandidateModel(Base):
     __tablename__ = "candidates"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "email", name="uq_candidates_owner_email"),
+        UniqueConstraint("owner_id", "external_ref", name="uq_candidates_owner_external_ref"),
+        Index("ix_candidates_owner_role", "owner_id", "role_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    email: Mapped[str] = mapped_column(String(255))
     role_id: Mapped[int] = mapped_column(ForeignKey("roles.id"))
-    session_token: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    external_ref: Mapped[str | None] = mapped_column(
-        String(255), unique=True, index=True, nullable=True
+    owner_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", name="fk_candidates_owner_id_users"),
+        index=True,
     )
+    session_token: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    external_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

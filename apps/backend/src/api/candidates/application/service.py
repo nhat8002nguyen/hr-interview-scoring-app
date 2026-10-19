@@ -5,6 +5,8 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Literal
 
+from sqlalchemy.exc import IntegrityError
+
 from api.candidates.application.ports import (
     CandidatesUnitOfWorkFactory,
     FileStorage,
@@ -19,6 +21,16 @@ from api.candidates.domain.exceptions import (
     CandidateNotFoundError,
 )
 from api.catalog.application.service import CatalogService
+
+_UNIQUE_VIOLATION = "23505"
+
+
+def _is_unique_violation(exc: IntegrityError) -> bool:
+    orig = exc.orig
+    if orig is None:
+        return False
+    code = getattr(orig, "pgcode", None) or getattr(orig, "sqlstate", None)
+    return code == _UNIQUE_VIOLATION
 
 
 def _default_token_generator() -> str:
@@ -58,10 +70,11 @@ class CandidatesService:
         name: str,
         email: str,
         role_id: int,
+        owner_id: int,
         external_ref: str | None = None,
     ) -> Candidate:
         async with self._uow_factory() as uow:
-            existing = await uow.candidates.get_by_email(email)
+            existing = await uow.candidates.get_by_email(owner_id, email)
             if existing is not None:
                 raise CandidateAlreadyExistsError(email)
             candidate = Candidate(
@@ -69,34 +82,40 @@ class CandidatesService:
                 name=name,
                 email=email,
                 role_id=role_id,
+                owner_id=owner_id,
                 session_token=self._token_generator(),
                 external_ref=external_ref,
                 created_at=datetime.now(UTC),
             )
-            return await uow.candidates.add(candidate)
+            try:
+                return await uow.candidates.add(candidate)
+            except IntegrityError as exc:
+                if not _is_unique_violation(exc):
+                    raise
+                raise CandidateAlreadyExistsError(email) from None
 
     async def get_by_session_token(self, token: str) -> Candidate | None:
         async with self._uow_factory() as uow:
             return await uow.candidates.get_by_session_token(token)
 
-    async def get_candidate(self, id: int) -> Candidate:
+    async def get_owned_candidate(self, candidate_id: int, owner_id: int) -> Candidate:
         async with self._uow_factory() as uow:
-            candidate = await uow.candidates.get(id)
-        if candidate is None:
-            raise CandidateNotFoundError(id)
+            candidate = await uow.candidates.get(candidate_id)
+        if candidate is None or candidate.owner_id != owner_id:
+            raise CandidateNotFoundError(candidate_id)
         return candidate
 
-    async def get_by_external_ref(self, ref: str) -> Candidate | None:
+    async def get_by_external_ref(self, owner_id: int, ref: str) -> Candidate | None:
         async with self._uow_factory() as uow:
-            return await uow.candidates.get_by_external_ref(ref)
+            return await uow.candidates.get_by_external_ref(owner_id, ref)
 
-    async def list_candidates_for_role(self, role_id: int) -> list[Candidate]:
+    async def list_candidates_for_role(self, role_id: int, owner_id: int) -> list[Candidate]:
         async with self._uow_factory() as uow:
-            return await uow.candidates.list_by_role(role_id)
+            return await uow.candidates.list_by_role(owner_id, role_id)
 
-    async def count_by_role(self, role_id: int) -> int:
+    async def count_by_role(self, role_id: int, owner_id: int) -> int:
         async with self._uow_factory() as uow:
-            return await uow.candidates.count_by_role(role_id)
+            return await uow.candidates.count_by_role(owner_id, role_id)
 
 
 class AnswersService:
@@ -192,9 +211,9 @@ class AnswersService:
         async with self._uow_factory() as uow:
             return await uow.answers.list_for_candidate(candidate_id)
 
-    async def get_by_external_ref(self, ref: str) -> Answer | None:
+    async def get_by_external_ref(self, candidate_id: int, external_ref: str) -> Answer | None:
         async with self._uow_factory() as uow:
-            return await uow.answers.get_by_external_ref(ref)
+            return await uow.answers.get_by_external_ref(candidate_id, external_ref)
 
     async def get_active(self, candidate_id: int, question_id: int) -> Answer | None:
         async with self._uow_factory() as uow:
@@ -204,6 +223,16 @@ class AnswersService:
         async with self._uow_factory() as uow:
             answer = await uow.answers.get(answer_id)
         if answer is None:
+            raise AnswerNotFoundError(answer_id)
+        return answer
+
+    async def get_owned(self, answer_id: int, owner_id: int) -> Answer:
+        async with self._uow_factory() as uow:
+            answer = await uow.answers.get(answer_id)
+            if answer is None:
+                raise AnswerNotFoundError(answer_id)
+            candidate = await uow.candidates.get(answer.candidate_id)
+        if candidate is None or candidate.owner_id != owner_id:
             raise AnswerNotFoundError(answer_id)
         return answer
 

@@ -42,12 +42,14 @@ class FakeCandidatesService:
         self._candidates = {candidate.id: candidate for candidate in candidates}
         self._next_id = max(self._candidates, default=0) + 1
 
-    async def list_candidates_for_role(self, role_id: int) -> list[Candidate]:
-        return [c for c in self._candidates.values() if c.role_id == role_id]
+    async def list_candidates_for_role(self, role_id: int, owner_id: int) -> list[Candidate]:
+        return [
+            c for c in self._candidates.values() if c.role_id == role_id and c.owner_id == owner_id
+        ]
 
-    async def get_candidate(self, candidate_id: int) -> Candidate:
+    async def get_owned_candidate(self, candidate_id: int, owner_id: int) -> Candidate:
         candidate = self._candidates.get(candidate_id)
-        if candidate is None:
+        if candidate is None or candidate.owner_id != owner_id:
             raise CandidateNotFoundError(candidate_id)
         return candidate
 
@@ -57,9 +59,10 @@ class FakeCandidatesService:
         name: str,
         email: str,
         role_id: int,
+        owner_id: int,
         external_ref: str | None = None,
     ) -> Candidate:
-        if any(c.email == email for c in self._candidates.values()):
+        if any(c.email == email and c.owner_id == owner_id for c in self._candidates.values()):
             from api.candidates.domain.exceptions import CandidateAlreadyExistsError
 
             raise CandidateAlreadyExistsError(email)
@@ -68,6 +71,7 @@ class FakeCandidatesService:
             name=name,
             email=email,
             role_id=role_id,
+            owner_id=owner_id,
             session_token="generated-token",
             external_ref=external_ref,
             created_at=datetime.now(UTC),
@@ -82,16 +86,22 @@ class FakeAnswersService:
         self,
         answers: list[Answer] | None = None,
         audio: dict[int, tuple[bytes, str]] | None = None,
+        *,
+        owners: dict[int, int] | None = None,
     ) -> None:
         self._answers = {answer.id: answer for answer in answers or []}
         self._audio = audio or {}
+        self._owners = owners or {}
 
     async def list_for_candidate(self, candidate_id: int) -> list[Answer]:
         return [a for a in self._answers.values() if a.candidate_id == candidate_id]
 
-    async def get(self, answer_id: int) -> Answer:
+    async def get_owned(self, answer_id: int, owner_id: int) -> Answer:
         answer = self._answers.get(answer_id)
         if answer is None:
+            raise AnswerNotFoundError(answer_id)
+        candidate_owner = self._owners.get(answer.candidate_id)
+        if candidate_owner is None or candidate_owner != owner_id:
             raise AnswerNotFoundError(answer_id)
         return answer
 
@@ -124,12 +134,20 @@ class FakeScoringReader:
         return self._snapshots.get(answer_id)
 
 
-def _candidate(candidate_id: int, name: str, token: str, *, role_id: int = 1) -> Candidate:
+def _candidate(
+    candidate_id: int,
+    name: str,
+    token: str,
+    *,
+    role_id: int = 1,
+    owner_id: int = 1,
+) -> Candidate:
     return Candidate(
         id=candidate_id,
         name=name,
         email=f"candidate{candidate_id}@example.com",
         role_id=role_id,
+        owner_id=owner_id,
         session_token=token,
         external_ref=None,
         created_at=SUBMITTED_AT,
@@ -207,14 +225,14 @@ def _app(
     return app, jwt_service
 
 
-def _token(jwt_service: JwtService, role: Role = Role.HR) -> str:
+def _token(jwt_service: JwtService, role: Role = Role.HR, sub: int = 1) -> str:
     return jwt_service.sign_access_token(
-        ActiveUserData(sub=1, email="hr@example.com", role=role),
+        ActiveUserData(sub=sub, email="hr@example.com", role=role),
     )
 
 
-def _headers(jwt_service: JwtService, role: Role = Role.HR) -> dict[str, str]:
-    return {"Authorization": f"Bearer {_token(jwt_service, role)}"}
+def _headers(jwt_service: JwtService, role: Role = Role.HR, sub: int = 1) -> dict[str, str]:
+    return {"Authorization": f"Bearer {_token(jwt_service, role, sub=sub)}"}
 
 
 async def test_list_candidates_for_role() -> None:
@@ -293,6 +311,47 @@ async def test_get_candidate_detail_has_link() -> None:
     }
 
 
+async def test_cross_tenant_candidate_detail_is_404() -> None:
+    candidate = _candidate(12, "Nhi Tran", "tok-12", owner_id=2)
+    app, jwt_service = _app(
+        FakeCandidatesService([candidate]),
+        FakeAnswersService(),
+        FakeCatalogService([QUESTION_1, QUESTION_2]),
+        FakeScoringReader(),
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/hr/candidates/12",
+            headers=_headers(jwt_service),
+        )
+
+    assert response.status_code == 404
+    body = response.json()
+    assert body["title"] == "Not Found"
+
+
+async def test_list_candidates_for_role_scopes_by_owner() -> None:
+    owned = _candidate(12, "Owner One", "tok-12", owner_id=1)
+    other = _candidate(13, "Owner Two", "tok-13", owner_id=2)
+    app, jwt_service = _app(
+        FakeCandidatesService([owned, other]),
+        FakeAnswersService(),
+        FakeCatalogService([QUESTION_1, QUESTION_2]),
+        FakeScoringReader(),
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/hr/roles/1/candidates",
+            headers=_headers(jwt_service),
+        )
+
+    assert response.status_code == 200
+    names = [item["name"] for item in response.json()]
+    assert names == ["Owner One"]
+
+
 async def test_create_candidate_201() -> None:
     app, jwt_service = _app(
         FakeCandidatesService([]),
@@ -352,7 +411,7 @@ async def test_get_answer_detail_has_grading_guide() -> None:
     answer = _answer(31, 12, 1)
     app, jwt_service = _app(
         FakeCandidatesService([]),
-        FakeAnswersService(answers=[answer]),
+        FakeAnswersService(answers=[answer], owners={12: 1}),
         FakeCatalogService([QUESTION_1, QUESTION_2]),
         FakeScoringReader({31: _snapshot()}),
     )
@@ -397,6 +456,7 @@ async def test_get_audio_streams() -> None:
         FakeAnswersService(
             answers=[audio_answer, text_answer],
             audio={5: (b"\x00\x01audio", "audio/mp4")},
+            owners={12: 1},
         ),
         FakeCatalogService([QUESTION_1, QUESTION_2]),
         FakeScoringReader(),
@@ -421,6 +481,25 @@ async def test_get_audio_streams() -> None:
     assert body["type"] == "about:blank"
     assert body["title"] == "Not Found"
     assert body["status"] == 404
+
+
+async def test_cross_tenant_answer_detail_is_404() -> None:
+    answer = _answer(31, 12, 1)
+    app, jwt_service = _app(
+        FakeCandidatesService([]),
+        FakeAnswersService(answers=[answer], owners={12: 2}),
+        FakeCatalogService([QUESTION_1, QUESTION_2]),
+        FakeScoringReader(),
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/hr/answers/31",
+            headers=_headers(jwt_service),
+        )
+
+    assert response.status_code == 404
+    assert response.json()["title"] == "Not Found"
 
 
 async def test_hr_requires_authentication() -> None:

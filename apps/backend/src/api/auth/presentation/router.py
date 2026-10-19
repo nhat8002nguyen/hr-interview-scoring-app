@@ -1,13 +1,19 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 
 from api.auth.application.service import AuthTokens
-from api.auth.presentation.dependencies import AuthenticationServiceDep
+from api.auth.presentation.dependencies import (
+    AuthenticationServiceDep,
+    get_rate_limiter,
+    rate_limit_sign_in,
+    rate_limit_sign_up,
+)
 from api.auth.presentation.schemas import (
     AuthTokensResponse,
     CredentialsBody,
     HrUserResponse,
     RefreshTokenBody,
     SignOutBody,
+    SignUpBody,
 )
 from iam import AuthType, require_auth
 
@@ -19,13 +25,29 @@ _require_none = require_auth(AuthType.NONE)
 @auth_router.post(
     "/sign-in",
     response_model=AuthTokensResponse,
-    dependencies=[Depends(_require_none)],
+    dependencies=[Depends(_require_none), Depends(rate_limit_sign_in)],
 )
 async def sign_in(
     body: CredentialsBody,
     service: AuthenticationServiceDep,
 ) -> AuthTokensResponse:
     tokens = await service.sign_in(body.email, body.password)
+    return _to_response(tokens)
+
+
+@auth_router.post(
+    "/sign-up",
+    response_model=AuthTokensResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(_require_none), Depends(rate_limit_sign_up)],
+)
+async def sign_up(
+    body: SignUpBody,
+    request: Request,
+    service: AuthenticationServiceDep,
+) -> AuthTokensResponse:
+    await get_rate_limiter(request).check(f"email:{body.email.lower()}")
+    tokens = await service.sign_up(body.email, body.password)
     return _to_response(tokens)
 
 

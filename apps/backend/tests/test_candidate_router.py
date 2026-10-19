@@ -145,6 +145,7 @@ def _candidate(candidate_id: int, name: str, token: str) -> Candidate:
         name=name,
         email=f"candidate{candidate_id}@example.com",
         role_id=1,
+        owner_id=1,
         session_token=token,
         external_ref=None,
         created_at=SUBMITTED_AT,

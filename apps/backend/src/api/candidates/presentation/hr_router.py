@@ -22,7 +22,7 @@ from api.candidates.presentation.schemas import (
     ScoringSummary,
 )
 from api.config import Settings
-from iam import AuthType, Role, require_auth, require_roles
+from iam import AuthType, CurrentUserDep, Role, require_auth, require_roles
 
 hr_router = APIRouter(prefix="/hr", tags=["hr"])
 
@@ -89,6 +89,7 @@ def _scoring_detail(snapshot: ScoringSnapshot | None) -> ScoringDetail:
 )
 async def list_candidates_for_role(
     role_id: int,
+    user: CurrentUserDep,
     candidates: CandidatesServiceDep,
     answers: AnswersServiceDep,
     catalog: CatalogServiceDep,
@@ -98,7 +99,7 @@ async def list_candidates_for_role(
     codes = {question.id: question.code for question in questions}
     total = len(questions)
     items: list[CandidateListItem] = []
-    for candidate in await candidates.list_candidates_for_role(role_id):
+    for candidate in await candidates.list_candidates_for_role(role_id, owner_id=user.sub):
         candidate_answers = await answers.list_for_candidate(candidate.id)
         answer_items: list[CandidateAnswerSummary] = []
         for answer in candidate_answers:
@@ -132,13 +133,14 @@ async def list_candidates_for_role(
 )
 async def get_candidate_detail(
     candidate_id: int,
+    user: CurrentUserDep,
     candidates: CandidatesServiceDep,
     answers: AnswersServiceDep,
     catalog: CatalogServiceDep,
     scoring: ScoringReaderDep,
     settings: SettingsDep,
 ) -> CandidateDetailResponse:
-    candidate = await candidates.get_candidate(candidate_id)
+    candidate = await candidates.get_owned_candidate(candidate_id, user.sub)
     questions = await catalog.list_questions()
     codes = {question.id: question.code for question in questions}
     total = len(questions)
@@ -176,6 +178,7 @@ async def get_candidate_detail(
 )
 async def create_candidate(
     body: CreateCandidateBody,
+    user: CurrentUserDep,
     candidates: CandidatesServiceDep,
     settings: SettingsDep,
 ) -> CreateCandidateResponse:
@@ -183,6 +186,7 @@ async def create_candidate(
         name=body.name,
         email=body.email,
         role_id=body.role_id,
+        owner_id=user.sub,
     )
     return CreateCandidateResponse(
         id=candidate.id,
@@ -201,11 +205,12 @@ async def create_candidate(
 )
 async def get_answer_detail(
     answer_id: int,
+    user: CurrentUserDep,
     answers: AnswersServiceDep,
     catalog: CatalogServiceDep,
     scoring: ScoringReaderDep,
 ) -> AnswerDetailResponse:
-    answer = await answers.get(answer_id)
+    answer = await answers.get_owned(answer_id, user.sub)
     question = await catalog.get_question(answer.question_id)
     snapshot = await scoring.get_snapshot(answer.id)
     return AnswerDetailResponse(
@@ -229,7 +234,9 @@ async def get_answer_detail(
 )
 async def get_answer_audio(
     answer_id: int,
+    user: CurrentUserDep,
     answers: AnswersServiceDep,
 ) -> Response:
+    await answers.get_owned(answer_id, user.sub)
     data, media_type = await answers.read_audio(answer_id)
     return Response(content=data, media_type=media_type)

@@ -1,12 +1,18 @@
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from api.auth.application.service import AuthenticationService, AuthTokens
 from api.auth.domain.entities import User
+from api.auth.domain.exceptions import EmailAlreadyExistsError, WeakPasswordError
 from iam import ActiveUserData, JwtService, Role, UnauthorizedError
 
 SECRET = "test-secret-key-at-least-32-bytes"
 EMAIL = "hr@talotrace.ai"
 PASSWORD = "correct-horse-battery-staple"
+
+
+class _UniqueViolation(Exception):
+    pgcode = "23505"
 
 
 class FakeUserRepository:
@@ -15,13 +21,17 @@ class FakeUserRepository:
         *,
         by_email: dict[str, User] | None = None,
         by_id: dict[int, User] | None = None,
+        fail_add_with_unique: bool = False,
     ) -> None:
         self._by_email = by_email or {}
         self._by_id = (
             by_id if by_id is not None else {user.id: user for user in self._by_email.values()}
         )
+        self._fail_add_with_unique = fail_add_with_unique
 
     async def add(self, user: User) -> User:
+        if self._fail_add_with_unique:
+            raise IntegrityError("INSERT", {}, _UniqueViolation())
         self._by_email[user.email] = user
         self._by_id[user.id] = user
         return user
@@ -171,3 +181,96 @@ async def test_sign_out_without_token_is_noop() -> None:
     await service.sign_out(None)
 
     assert refresh_tokens.revoked == []
+
+
+async def test_sign_up_creates_hr_and_issues_tokens() -> None:
+    users = FakeUserRepository()
+    refresh_tokens = FakeRefreshTokenStorage()
+    service = AuthenticationService(
+        users=users,
+        hashing=FakeHashingService(),
+        jwt=_jwt(),
+        refresh_tokens=refresh_tokens,
+    )
+
+    tokens = await service.sign_up("new@example.com", "password123")
+
+    assert tokens.user.role == Role.HR
+    assert tokens.user.email == "new@example.com"
+
+    stored = await users.get_by_email("new@example.com")
+    assert stored is not None
+    assert stored.role == Role.HR
+    assert stored.password_hash == "hashed:password123"
+
+    assert len(refresh_tokens.saved) == 1
+    assert refresh_tokens.saved[0][1] == tokens.user.id
+
+
+async def test_sign_up_duplicate_email_raises() -> None:
+    existing = User(id=7, email="new@example.com", password_hash="hashed:x", role=Role.HR)
+    service = AuthenticationService(
+        users=FakeUserRepository(by_email={existing.email: existing}),
+        hashing=FakeHashingService(),
+        jwt=_jwt(),
+        refresh_tokens=FakeRefreshTokenStorage(),
+    )
+
+    with pytest.raises(EmailAlreadyExistsError):
+        await service.sign_up("new@example.com", "password123")
+
+
+async def test_sign_up_unique_violation_on_add_maps_to_conflict() -> None:
+    service = AuthenticationService(
+        users=FakeUserRepository(fail_add_with_unique=True),
+        hashing=FakeHashingService(),
+        jwt=_jwt(),
+        refresh_tokens=FakeRefreshTokenStorage(),
+    )
+
+    with pytest.raises(EmailAlreadyExistsError):
+        await service.sign_up("race@example.com", "password123")
+
+
+async def test_sign_up_then_sign_in_with_different_email_casing() -> None:
+    users = FakeUserRepository()
+    service = AuthenticationService(
+        users=users,
+        hashing=FakeHashingService(),
+        jwt=_jwt(),
+        refresh_tokens=FakeRefreshTokenStorage(),
+    )
+
+    signed_up = await service.sign_up("  Alex@Acme.com ", "password123")
+    signed_in = await service.sign_in("alex@acme.com", "password123")
+
+    assert signed_up.user.email == "alex@acme.com"
+    assert signed_in.user.email == "alex@acme.com"
+    stored = await users.get_by_email("alex@acme.com")
+    assert stored is not None
+    assert stored.email == "alex@acme.com"
+
+
+async def test_sign_up_duplicate_email_is_case_insensitive() -> None:
+    existing = User(id=7, email="alex@acme.com", password_hash="hashed:x", role=Role.HR)
+    service = AuthenticationService(
+        users=FakeUserRepository(by_email={existing.email: existing}),
+        hashing=FakeHashingService(),
+        jwt=_jwt(),
+        refresh_tokens=FakeRefreshTokenStorage(),
+    )
+
+    with pytest.raises(EmailAlreadyExistsError):
+        await service.sign_up("Alex@Acme.com", "password123")
+
+
+async def test_sign_up_short_password_raises() -> None:
+    service = AuthenticationService(
+        users=FakeUserRepository(),
+        hashing=FakeHashingService(),
+        jwt=_jwt(),
+        refresh_tokens=FakeRefreshTokenStorage(),
+    )
+
+    with pytest.raises(WeakPasswordError):
+        await service.sign_up("new@example.com", "short")

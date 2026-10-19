@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { overrideScoreSchema, createCandidateSchema, signInSchema } from "./schemas";
+import { overrideScoreSchema, createCandidateSchema, signInSchema, signUpSchema } from "./schemas";
 
 describe("overrideScoreSchema", () => {
   it("accepts a score in 1..4 with a non-empty reason", () => {
@@ -37,5 +37,23 @@ describe("createCandidateSchema", () => {
 describe("signInSchema", () => {
   it("rejects an empty password", () => {
     expect(signInSchema.safeParse({ email: "hr@talotrace.ai", password: "" }).success).toBe(false);
+  });
+});
+
+describe("signUpSchema", () => {
+  it("accepts a valid email and a password of at least 8 characters", () => {
+    expect(
+      signUpSchema.safeParse({ email: "newhr@example.com", password: "password" }).success,
+    ).toBe(true);
+  });
+
+  it("rejects a password shorter than 8 characters", () => {
+    expect(
+      signUpSchema.safeParse({ email: "newhr@example.com", password: "short" }).success,
+    ).toBe(false);
+  });
+
+  it("rejects an invalid email", () => {
+    expect(signUpSchema.safeParse({ email: "nope", password: "password" }).success).toBe(false);
   });
 });
