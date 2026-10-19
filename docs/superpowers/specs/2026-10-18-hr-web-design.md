@@ -7,13 +7,16 @@
 **Consumes:** `apps/api` (FastAPI monolith) per the accepted API contract
 **Auth model:** BFF proxy, tokens held in httpOnly cookies, never in browser JS
 
+> **Amended by `2026-10-19-hr-self-registration-and-tenancy-design.md`.**
+> That spec adds HR self-registration and per-account tenancy and is authoritative where it changes this document.
+
 ## 1. Goal
 
 Define the design of the HR area frontend, the second of the three implementation specs listed in the API contract.
 This document is the single source of truth for building `apps/hr-web`.
 
 The HR area is the decision-making surface.
-It lets one HR account sign in, browse candidates per role, see each answer with its suggested score and reasoning, override a score with a required reason, watch scoring-job status, retry failed jobs, import the data pack, and create new candidates to generate interview links.
+It lets an HR account sign in, browse candidates per role, see each answer with its suggested score and reasoning, override a score with a required reason, watch scoring-job status, retry failed jobs, import the data pack, and create new candidates to generate interview links.
 
 This spec consumes the accepted API contract (`2026-10-18-api-contract-design.md`) and does not redefine any backend behavior.
 Endpoint paths, request/response shapes, status codes, and the scoring status model are all fixed there.
@@ -22,7 +25,7 @@ Endpoint paths, request/response shapes, status codes, and the scoring status mo
 
 ### 2.1 Phase 1 (in scope)
 
-- JWT sign-in against the seeded HR account, with a real sign-in form.
+- JWT sign-in (against the seeded HR account or any self-registered account) with a real sign-in form, plus self-service sign-up.
 - Browse roles, candidates per role, and answers with suggested score, final score, and reasoning.
 - Override a score with a required reason.
 - View scoring-job status across all four statuses, and retry failed jobs.
@@ -92,10 +95,13 @@ They are never written by the browser, never placed in localStorage or sessionSt
 ### 5.2 Flows
 
 - **Sign in:** `POST /api/auth/sign-in` calls FastAPI `POST /auth/sign-in`, then sets both cookies and returns the `user` object.
+  The sign-in page links to the sign-up page.
+- **Sign up:** `POST /api/auth/sign-up` calls FastAPI `POST /auth/sign-up`, then sets both cookies and returns the `user` object.
 - **Sign out:** `POST /api/auth/sign-out` calls FastAPI `POST /auth/sign-out` with the refresh token, then clears both cookies.
 - **Refresh:** when a route handler receives `401` from FastAPI, it reads `hr_refresh`, calls `POST /auth/refresh-tokens`, and rewrites both cookies.
   The retry uses the new access token.
 - **Guard:** `middleware.ts` checks for the presence of the session cookies on protected routes and redirects unauthenticated visitors to `/sign-in`.
+  `/sign-in` and `/sign-up` are public; all other pages are behind the guard.
   The middleware performs no network I/O and no token validation; it is a UX guard, not a security boundary.
 
 The security boundary is the API: every `/hr/*` call carries a valid Bearer JWT or fails with `401`/`403`.
@@ -105,7 +111,8 @@ The browser's inability to read the tokens means a successful XSS cannot exfiltr
 
 | URL | Purpose |
 |---|---|
-| `/sign-in` | Email and password form. |
+| `/sign-in` | Email and password form. Links to `/sign-up`. |
+| `/sign-up` | Email and password form to create an HR account. |
 | `/` | Redirects to `/roles`. |
 | `/roles` | Role list with candidate counts. |
 | `/roles/[roleId]` | Candidates for a role: name, answer progress, per-answer scoring badge. |
@@ -115,7 +122,10 @@ The browser's inability to read the tokens means a successful XSS cannot exfiltr
 | `/import` | Data-pack zip upload and summary. |
 | `/candidates/new` | Create candidate and show the generated `interview_link`. |
 
-All pages other than `/sign-in` are behind the session guard.
+All pages other than `/sign-in` and `/sign-up` are behind the session guard.
+
+All list and detail screens are unchanged in shape; their data is scoped to the signed-in HR account by the API.
+A signed-in HR account sees only its own candidates, answers, scoring jobs, and candidate counts.
 
 ## 7. Route Handlers (BFF surface)
 
@@ -125,6 +135,7 @@ Each handler reads cookies, calls FastAPI, and returns the typed JSON (or stream
 | Handler | FastAPI target | Notes |
 |---|---|---|
 | `POST /api/auth/sign-in` | `POST /auth/sign-in` | Sets cookies. |
+| `POST /api/auth/sign-up` | `POST /auth/sign-up` | Sets cookies; maps `409`/`422` to inline errors. |
 | `POST /api/auth/sign-out` | `POST /auth/sign-out` | Clears cookies. |
 | `GET /api/hr/roles` | `GET /hr/roles` | |
 | `GET /api/hr/roles/[roleId]/candidates` | `GET /hr/roles/{role_id}/candidates` | |
@@ -211,14 +222,14 @@ A `409` duplicate email is shown inline.
 - **Config (env):** `NEXT_PUBLIC_API_URL` (FastAPI base URL, read server-side). Tokens are never exposed to the browser.
 - **CORS:** not required between the HR browser and `apps/hr-web` (same-origin).
   The API's own `CORS_ORIGINS` allow-list is unchanged.
-- **Validation:** zod schemas for the override, create-candidate, and import forms.
+- **Validation:** zod schemas for the sign-up, override, create-candidate, and import forms.
 - **Logging:** the HR app does not log tokens.
   Session errors are logged server-side without cookie values.
 
 ## 12. Testing
 
-- **Component/unit (Vitest + React Testing Library):** `ScoringBadge` state-to-render mapping, override form validation, "failed never renders a score".
-- **Route handler (unit, mocked `lib/api`):** cookie set/clear on sign-in/out, single-flight refresh, problem-detail mapping.
+- **Component/unit (Vitest + React Testing Library):** `ScoringBadge` state-to-render mapping, override form validation, sign-up form validation, the sign-in -> sign-up link, "failed never renders a score".
+- **Route handler (unit, mocked `lib/api`):** cookie set/clear on sign-in/sign-up/sign-out, single-flight refresh, problem-detail mapping (`409`/`422` on sign-up).
 - **End-to-end (Playwright against the real API and a seeded data pack):** sign in, roles to candidates to answer, override with reason, retry a failed job, import the pack and observe the summary, and confirm a duplicate submission yields a single score.
 - Mirrors the frontend section of API contract section 13.
 
@@ -226,7 +237,7 @@ A `409` duplicate email is shown inline.
 
 | Requirement | Design guarantee |
 |---|---|
-| HR sign-in | Real form against the seeded account via `POST /api/auth/sign-in`; JWT held in httpOnly cookies. |
+| HR sign-in or sign-up | Real forms via `POST /api/auth/sign-in` and `POST /api/auth/sign-up`; JWT held in httpOnly cookies. |
 | See candidates for a role with scores and reasoning | `/roles/[roleId]` and `/answers/[answerId]` render suggested and final scores plus `suggested_reasoning`. |
 | Override requires a reason | zod + server validation of `override_reason`; `409`/`422` surfaced inline. |
 | Failed job visible with retry, never shown as a score | `ScoringBadge` failed state plus Retry; no score rendered for `failed`. |

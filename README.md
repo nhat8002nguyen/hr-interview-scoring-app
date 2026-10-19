@@ -10,7 +10,7 @@ HR reviews each answer, sees an LLM-suggested score with reasoning, and can over
 - HR app: https://talot-hr-web.vercel.app
 - API health: https://talot-api.nate-ng.com/health
 
-Sign in to the HR app with `hr@talotrace.ai` / `4uuXKGhi24zDU4MShW8dpJRK`.
+Sign in to the HR app with the seeded demo account `hr@talotrace.ai` / `4uuXKGhi24zDU4MShW8dpJRK`, or create your own account from the sign-up page.
 Candidate links are created from the HR app or returned by the data-pack import.
 
 ## Repository layout
@@ -195,10 +195,10 @@ Each app is self-contained under `apps/`, with its own dependencies and build fi
 |---|---|
 | `roles` | One row per open role. Candidates reference a role. |
 | `questions` | The six questions (`Q1`..`Q6`) with prompt and JSONB grading guide (scores 1-4). |
-| `candidates` | Name, unique email, role, and an unguessable `session_token` used by the candidate link. `external_ref` maps imported candidates. |
+| `candidates` | Name, email, role, and an unguessable `session_token` used by the candidate link. `owner_id` scopes each candidate to its HR account; `email` and `external_ref` are unique per owner. `external_ref` maps imported candidates. |
 | `answers` | Exactly one active row per `(candidate_id, question_id)`. Stores text or `audio_key`, a SHA-256 `content_hash`, `version`, and `external_ref`. |
 | `scoring_jobs` | One job per answer. Stores status, suggested score/reasoning, final score, override reason, attempt count, lease, and last error. |
-| `users` | HR accounts. One seeded account is created at startup. |
+| `users` | HR accounts. One seeded account is created at startup; anyone can self-register more. |
 | `refresh_tokens` | Single-use rotating refresh tokens for HR sessions. |
 
 Statuses are `queued`, `scored`, `failed`, and `needs_a_person`.
@@ -208,7 +208,7 @@ A failed job never exposes a score.
 
 | Area | Endpoints |
 |---|---|
-| Auth | `POST /auth/sign-in`, `POST /auth/refresh-tokens`, `POST /auth/sign-out` |
+| Auth | `POST /auth/sign-in`, `POST /auth/sign-up`, `POST /auth/refresh-tokens`, `POST /auth/sign-out` |
 | Candidate (`X-Candidate-Token`) | `GET /candidate/interview`, `POST /candidate/interview/answers/{question_id}`, `POST /candidate/interview/answers/{question_id}/audio` |
 | HR catalog | `GET /hr/roles`, `GET /hr/roles/{role_id}/candidates` |
 | HR candidates | `GET /hr/candidates/{candidate_id}`, `POST /hr/candidates` |
@@ -220,6 +220,19 @@ A failed job never exposes a score.
 HR endpoints require a Bearer JWT with role `hr`.
 Candidate endpoints accept only the session token and never return scores or grading guides.
 Errors use RFC 7807 problem details.
+
+### Accounts and data isolation
+
+Anyone can create an HR account from the HR app's sign-up page (`POST /auth/sign-up`, email + password).
+Each account owns its candidates and therefore its answers, scoring jobs, and interview links.
+Every `/hr/*` read and write is scoped to the signed-in account, and cross-account access returns `404`.
+The seeded demo account is an ordinary account.
+`roles` and `questions` stay shared, read-only reference data.
+
+Two limitations are accepted and documented:
+
+- Sign-up does not verify the email address.
+- There is no password reset. A forgotten password locks the account out.
 
 ### How an answer moves from submission to a score
 
