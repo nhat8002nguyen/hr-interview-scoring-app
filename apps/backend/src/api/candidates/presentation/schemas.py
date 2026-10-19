@@ -25,6 +25,7 @@ class InterviewQuestion(BaseModel):
     sort_order: int
     prompt: str
     answer: InterviewAnswer | None
+    attempts_remaining: int
 
 
 class Progress(BaseModel):
@@ -36,6 +37,7 @@ class InterviewResponse(BaseModel):
     candidate: InterviewCandidate
     questions: list[InterviewQuestion]
     progress: Progress
+    max_submissions: int
 
 
 # --- Candidate answer submission ---
@@ -56,6 +58,7 @@ class SubmitResponse(BaseModel):
     status: str
     unchanged: bool
     answer: SubmittedAnswer
+    attempts_remaining: int
 
 
 # --- HR candidate list ---

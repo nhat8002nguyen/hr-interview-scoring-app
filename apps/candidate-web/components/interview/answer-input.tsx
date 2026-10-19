@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 export interface AnswerInputProps {
   questionId: number;
   initialAnswer: Answer | null;
+  attemptsRemaining: number;
   submitting: boolean;
   onSubmitText: (questionId: number, text: string) => void;
   onSubmitAudio: (questionId: number, file: File) => void;
@@ -17,6 +18,7 @@ export interface AnswerInputProps {
 export function AnswerInput({
   questionId,
   initialAnswer,
+  attemptsRemaining,
   submitting,
   onSubmitText,
   onSubmitAudio,
@@ -30,7 +32,9 @@ export function AnswerInput({
   const [file, setFile] = useState<File | null>(null);
 
   const canSubmit =
-    !submitting && (mode === "text" ? text.trim() !== "" : file !== null);
+    !submitting &&
+    attemptsRemaining > 0 &&
+    (mode === "text" ? text.trim() !== "" : file !== null);
 
   function handleSubmit() {
     if (!canSubmit) return;
@@ -72,6 +76,12 @@ export function AnswerInput({
           </p>
         </div>
       )}
+
+      <p className="text-xs text-zinc-500">
+        {attemptsRemaining === 0
+          ? "No attempts remaining"
+          : `${attemptsRemaining} attempt${attemptsRemaining === 1 ? "" : "s"} remaining`}
+      </p>
 
       <Button type="button" disabled={!canSubmit} onClick={handleSubmit}>
         Submit answer

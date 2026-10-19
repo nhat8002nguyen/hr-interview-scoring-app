@@ -89,8 +89,8 @@ talotrace-assessment/
 | ID scheme | Integer primary keys for all entities; `session_token` is the only secret (not a primary key). |
 | Scoring queue | `scoring_jobs` table in PostgreSQL, drained by an in-process `asyncio` worker pool with `FOR UPDATE SKIP LOCKED`. |
 | LLM integration | `ScoringLlmPort` protocol + `DeepSeekLlm` adapter; config via env. Output strictly validated to `{score: int 1-4, reasoning: str}`. |
-| Audio storage | `FileStorage` abstraction, local filesystem volume in phase 1; object-storage adapter later. |
-| Resubmission | One active `Answer` row per (candidate, question), with a `content_hash`. Byte-identical resubmission is an idempotent no-op; changed content increments `version` and resets the `ScoringJob` to `queued`. Exactly one score ever exists per candidate x question. |
+| Audio storage | `FileStorage` abstraction, local filesystem volume in phase 1; object-storage adapter later. Candidate audio keys include the content hash (`audio/{candidate_id}/{question_id}/{content_hash}{ext}`) so a rejected changed upload cannot overwrite the accepted recording. |
+| Resubmission | One active `Answer` row per (candidate, question), with a `content_hash`. Byte-identical resubmission is an idempotent no-op; changed content increments `version` and resets the `ScoringJob` to `queued`. Exactly one score ever exists per candidate x question. Changed resubmissions are capped at `MAX_ANSWER_SUBMISSIONS` (default 3) per candidate x question; a changed submit beyond the cap returns `409`. |
 | Candidate isolation | Candidate endpoints have no cross-candidate lookups; grades and grading guides are never serialized to the candidate area. |
 
 ## 5. Authentication & Authorization
@@ -161,15 +161,17 @@ Enums:
 | question_id | int FK -> questions.id | |
 | answer_type | str | `text` \| `audio` |
 | text | text nullable | transcript for text answers |
-| audio_key | str nullable | `FileStorage` key for audio answers |
+| audio_key | str nullable | `FileStorage` key for audio answers; candidate uploads use `audio/{candidate_id}/{question_id}/{content_hash}{ext}` |
 | content_hash | str | SHA-256 hex of submitted content (UTF-8 text bytes, or audio file bytes) |
-| version | int | starts 1; increments on resubmit |
+| version | int | starts 1; increments on changed resubmit; doubles as the submission counter for the cap |
 | external_ref | str nullable indexed | data-pack `answer_id` (e.g. `"A001"`) |
 | submitted_at | timestamptz | |
 
 - Unique constraint on `(candidate_id, question_id)`. There is exactly one active row per candidate x question.
 
 **Resubmission semantics.** Each submit computes `content_hash = sha256(submitted bytes)`. If the active answer for that question already has the same `content_hash`, the submit is an idempotent no-op: no new version, no scoring-job reset, no re-score. Otherwise the answer is upserted (new row, or `version` incremented when content changes), `content_hash` is stored, and the `scoring_job` is reset to `queued`. This makes a double-click or byte-identical resubmission produce exactly one score, and the `(candidate_id, question_id)` unique key makes racing duplicate submits converge to one row.
+
+Changed resubmissions are capped at `MAX_ANSWER_SUBMISSIONS` (default 3). The upsert only updates the row while `version < MAX_ANSWER_SUBMISSIONS`, so a changed submit at the cap is rejected with `409` and cannot push `version` past the limit even under concurrent submits. Byte-identical resubmission remains a no-op and does not consume an attempt.
 
 ### 6.5 `scoring_jobs`
 
@@ -262,10 +264,12 @@ Response `200`:
         "text": "...",
         "version": 1,
         "submitted_at": "2026-09-14T10:15:00Z"
-      }
+      },
+      "attempts_remaining": 2
     }
   ],
-  "progress": { "answered": 1, "total": 6 }
+  "progress": { "answered": 1, "total": 6 },
+  "max_submissions": 3
 }
 ```
 
@@ -284,16 +288,17 @@ Response `201` (or `200` when unchanged):
 {
   "status": "received",
   "unchanged": false,
-  "answer": { "answer_type": "text", "version": 2, "submitted_at": "..." }
+  "answer": { "answer_type": "text", "version": 2, "submitted_at": "..." },
+  "attempts_remaining": 1
 }
 ```
 
 - `201` + `unchanged: false` when the answer is new or its content changed (a new `version` was written and the job re-queued).
 - `200` + `unchanged: true` when the submitted content hash matches the existing answer (idempotent no-op; the existing score/job is left untouched).
 
-`422` if `text` is empty/whitespace or `answer_type` is not `text`. `404` if `question_id` is not one of the six.
+`422` if `text` is empty/whitespace or `answer_type` is not `text`. `404` if `question_id` is not one of the six. `409` if the content changed and the candidate has already used `MAX_ANSWER_SUBMISSIONS` submissions for that question.
 
-`POST /candidate/interview/answers/{question_id}/audio` - Request: `multipart/form-data` with field `file` (audio). Response `201`/`200` (same shape, `answer_type: "audio"`, hash over the file bytes). `422` on missing/invalid file, `404` unknown question.
+`POST /candidate/interview/answers/{question_id}/audio` - Request: `multipart/form-data` with field `file` (audio). Response `201`/`200` (same shape, `answer_type: "audio"`, hash over the file bytes). Stored under a content-hash key so a rejected changed upload cannot overwrite the accepted recording. `422` on missing/invalid file, `404` unknown question. `409` if the content changed and the candidate has already used `MAX_ANSWER_SUBMISSIONS` submissions for that question.
 
 Resubmission semantics: submitting again for the same question upserts the single active answer. Identical content (same `content_hash`) is a no-op; changed content increments `version`, replaces content, and resets the scoring job to `queued`. The response reports `unchanged` and the current `version`.
 
@@ -463,6 +468,7 @@ Response `200` (updated answer shape). `override_reason` is required (non-empty)
 5. Return the summary above.
 
 Import is idempotent on `external_ref`: re-importing the same pack does not duplicate questions, candidates, or answers.
+HR import bypasses the candidate submission cap: answer upserts run with no `version < max_submissions` guard (`max_submissions=None`), so a pack can load or replace answers even when `version` already meets `MAX_ANSWER_SUBMISSIONS`.
 
 ## 9. Errors
 
@@ -504,7 +510,7 @@ Prompt-injection safety: the system prompt instructs the model that the candidat
 ## 11. Cross-Cutting Concerns
 
 - **CORS**: allow-list via `CORS_ORIGINS` env (the two FE origins).
-- **Config (env)**: `DATABASE_URL`, `JWT_SECRET`, `JWT_ALGORITHM`, `CANDIDATE_WEB_ORIGIN`, `CORS_ORIGINS`, `SCORING_WORKERS` (pool size), `SCORING_MAX_ATTEMPTS`, `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `AUDIO_STORAGE_DIR`.
+- **Config (env)**: `DATABASE_URL`, `JWT_SECRET`, `JWT_ALGORITHM`, `CANDIDATE_WEB_ORIGIN`, `CORS_ORIGINS`, `SCORING_WORKERS` (pool size), `SCORING_MAX_ATTEMPTS`, `MAX_ANSWER_SUBMISSIONS` (per-question submit cap, default 3), `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `AUDIO_STORAGE_DIR`.
 - **LLM adapter**: `ScoringLlmPort` protocol with `DeepSeekLlm` implementation; alternate providers swap in without changing the worker. The test suite may substitute a fake.
 - **Audio storage**: `FileStorage` protocol with a local-filesystem adapter in phase 1.
 - **Background worker**: `asyncio` pool of `SCORING_WORKERS` tasks started in the FastAPI lifespan, stopped cleanly on shutdown (mirrors the template's `OutboxProcessor` lifecycle).
@@ -514,12 +520,15 @@ Prompt-injection safety: the system prompt instructs the model that the candidat
 | Requirement | Design guarantee |
 |---|---|
 | Same answer twice does not create two scores | Unique `(candidate_id, question_id)` on `answers`; resubmit upserts the single row and resets the single `scoring_job`; byte-identical content (`content_hash`) is an idempotent no-op. |
+| Candidate cannot spam a question | `version` is capped at `MAX_ANSWER_SUBMISSIONS` by the atomic upsert guard `version < max_submissions`; excess changed submits return `409`. |
 | HR sees which submission counts | One active answer per question; `version` + `submitted_at` expose resubmission history. |
 | Candidate cannot see grades/other candidates/HR pages via API | Candidate endpoints scope by token and never serialize scores or grading guides; `/hr/*` requires JWT `hr`; no cross-candidate lookups exist. |
 | Failed job visible with retry, never shown as low score | `status=failed` + `last_error`; `POST /hr/scoring-jobs/{id}/retry`; failed jobs have no `final_score`. |
 | Prompt-injection cannot change the score | Untrusted-text delimiters + strict output schema validation. |
 | Typed data-pack answers can be loaded and scored | `POST /hr/import` enqueues text answers for scoring. |
 | Audio answer stored and visible to HR | `answer_type=audio` + `audio_key`; `GET /hr/answers/{id}/audio` streams it. |
+| Rejected audio cannot overwrite accepted audio | Candidate audio keys include `content_hash`; at-cap changed uploads are rejected before save. |
+| HR import ignores the candidate submit cap | Import upserts with `max_submissions=None` (no `version < max_submissions` guard). |
 | App runs from README on a clean machine | `docker-compose.yml` boots Postgres + API; README documents setup/run/test (own spec section, delivered in repo). |
 
 ## 13. Testing & Verification

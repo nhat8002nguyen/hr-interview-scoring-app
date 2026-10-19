@@ -14,3 +14,12 @@ class AnswerNotFoundError(Exception):
     def __init__(self, answer_id: int) -> None:
         super().__init__(f"Answer #{answer_id} not found")
         self.answer_id = answer_id
+
+
+class AttemptsExhaustedError(Exception):
+    def __init__(self, question_id: int, max_submissions: int) -> None:
+        super().__init__(
+            f"Maximum submissions ({max_submissions}) reached for question {question_id}"
+        )
+        self.question_id = question_id
+        self.max_submissions = max_submissions

@@ -33,6 +33,7 @@ export function QuestionCard({
       <AnswerInput
         questionId={question.id}
         initialAnswer={question.answer}
+        attemptsRemaining={question.attempts_remaining}
         submitting={submitting}
         onSubmitText={onSubmitText}
         onSubmitAudio={onSubmitAudio}

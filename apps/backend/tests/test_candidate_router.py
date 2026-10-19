@@ -6,6 +6,7 @@ from httpx import ASGITransport, AsyncClient
 
 from api.candidates.application.service import SubmitResult
 from api.candidates.domain.entities import Answer, Candidate
+from api.candidates.domain.exceptions import AttemptsExhaustedError
 from api.candidates.presentation.candidate_router import candidate_router
 from api.candidates.presentation.errors import register_candidates_exception_handlers
 from api.catalog.domain.entities import Question, Role
@@ -61,12 +62,18 @@ class FakeAnswersService:
         self,
         question_ids: set[int],
         answers: list[Answer] | None = None,
+        max_submissions: int = 3,
     ) -> None:
         self._question_ids = question_ids
         self._answers: dict[tuple[int, int], Answer] = {
             (answer.candidate_id, answer.question_id): answer for answer in answers or []
         }
         self._next_id = max((answer.id for answer in self._answers.values()), default=0) + 1
+        self.max_submissions = max_submissions
+
+    def attempts_remaining(self, answer: Answer | None) -> int:
+        used = 0 if answer is None else answer.version
+        return max(0, self.max_submissions - used)
 
     async def list_for_candidate(self, candidate_id: int) -> list[Answer]:
         return [answer for answer in self._answers.values() if answer.candidate_id == candidate_id]
@@ -112,6 +119,8 @@ class FakeAnswersService:
         existing = self._answers.get(key)
         if existing is not None and existing.content_hash == content_hash:
             return SubmitResult(status="received", unchanged=True, answer=existing)
+        if existing is not None and existing.version >= self.max_submissions:
+            raise AttemptsExhaustedError(question_id, self.max_submissions)
         answer = Answer(
             id=existing.id if existing else self._next_id,
             candidate_id=candidate_id,
@@ -214,6 +223,7 @@ async def test_interview_returns_questions_without_grades() -> None:
     body = response.json()
     assert body["candidate"] == {"id": 1, "name": "Nhi Tran", "role": "Backend Engineer"}
     assert body["progress"] == {"answered": 1, "total": 2}
+    assert body["max_submissions"] == 3
     assert body["questions"] == [
         {
             "id": 1,
@@ -226,6 +236,7 @@ async def test_interview_returns_questions_without_grades() -> None:
                 "version": 1,
                 "submitted_at": SUBMITTED_AT_ISO,
             },
+            "attempts_remaining": 2,
         },
         {
             "id": 2,
@@ -233,6 +244,7 @@ async def test_interview_returns_questions_without_grades() -> None:
             "sort_order": 2,
             "prompt": "Prompt 2",
             "answer": None,
+            "attempts_remaining": 3,
         },
     ]
     _assert_no_grades(body)
@@ -262,6 +274,7 @@ async def test_submit_text_201_and_received() -> None:
             "version": 1,
             "submitted_at": SUBMITTED_AT_ISO,
         },
+        "attempts_remaining": 2,
     }
 
 
@@ -297,6 +310,7 @@ async def test_submit_unchanged_200() -> None:
             "version": 1,
             "submitted_at": SUBMITTED_AT_ISO,
         },
+        "attempts_remaining": 2,
     }
 
 
@@ -390,6 +404,7 @@ async def test_submit_audio_201() -> None:
             "version": 1,
             "submitted_at": SUBMITTED_AT_ISO,
         },
+        "attempts_remaining": 2,
     }
 
 
@@ -469,3 +484,57 @@ async def test_no_cross_candidate_read() -> None:
     assert body["candidate"] == {"id": 1, "name": "Alice", "role": "Backend Engineer"}
     assert body["progress"] == {"answered": 0, "total": 2}
     assert [question["answer"] for question in body["questions"]] == [None, None]
+
+
+async def test_submit_at_limit_returns_409() -> None:
+    candidate = _candidate(1, "Nhi Tran", "token-a")
+    full = Answer(
+        id=10,
+        candidate_id=1,
+        question_id=1,
+        answer_type="text",
+        text="old",
+        audio_key=None,
+        content_hash="old",
+        version=3,
+        external_ref=None,
+        submitted_at=SUBMITTED_AT,
+    )
+    app = _app(
+        FakeCandidatesService([candidate]),
+        FakeAnswersService({1, 2}, answers=[full]),
+        FakeCatalogService([QUESTION_1, QUESTION_2]),
+    )
+
+    async with AsyncClient(transport=_transport(app), base_url="http://test") as client:
+        response = await client.post(
+            "/candidate/interview/answers/1",
+            headers={"X-Candidate-Token": "token-a"},
+            json={"answer_type": "text", "text": "new"},
+        )
+
+    assert response.status_code == 409
+    body = response.json()
+    assert body["type"] == "about:blank"
+    assert body["title"] == "Conflict"
+    assert body["status"] == 409
+
+
+async def test_interview_reports_attempts_remaining_and_max() -> None:
+    candidate = _candidate(1, "Nhi Tran", "token-a")
+    answer = _answer(10, 1, 1)
+    app = _app(
+        FakeCandidatesService([candidate]),
+        FakeAnswersService({1, 2}, answers=[answer]),
+        FakeCatalogService([QUESTION_1, QUESTION_2]),
+    )
+
+    async with AsyncClient(transport=_transport(app), base_url="http://test") as client:
+        response = await client.get(
+            "/candidate/interview",
+            headers={"X-Candidate-Token": "token-a"},
+        )
+
+    body = response.json()
+    assert body["max_submissions"] == 3
+    assert [q["attempts_remaining"] for q in body["questions"]] == [2, 3]

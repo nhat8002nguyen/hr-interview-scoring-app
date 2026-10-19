@@ -36,6 +36,7 @@ function buildQuestions(answered: number[] = []): Question[] {
           submitted_at: "t",
         }
       : null,
+    attempts_remaining: 3,
   }));
 }
 
@@ -44,6 +45,7 @@ function interview(answered: number[] = []): InterviewResponse {
     candidate: { id: 1, name: "Nhi", role: "Backend Engineer" },
     questions: buildQuestions(answered),
     progress: { answered: answered.length, total: 6 },
+    max_submissions: 3,
   };
 }
 
@@ -54,6 +56,7 @@ const received: SubmitResponse = {
   status: "received",
   unchanged: false,
   answer: { answer_type: "text", version: 1, submitted_at: "t" },
+  attempts_remaining: 2,
 };
 
 beforeEach(() => {
@@ -149,6 +152,23 @@ it("shows an inline error when submit rejects", async () => {
   await user.type(screen.getByLabelText("Your answer"), "x");
   await user.click(screen.getByRole("button", { name: "Submit answer" }));
   expect(await screen.findByText(/could not be submitted/i)).toBeInTheDocument();
+});
+
+it("shows the exhausted state when a submit returns 409", async () => {
+  const user = userEvent.setup();
+  vi.mocked(getInterview).mockResolvedValue(interview());
+  vi.mocked(submitTextAnswer).mockRejectedValue(
+    new ApiError(409, "Maximum submissions (3) reached for question 1"),
+  );
+  render(<InterviewFlow token="tok" />);
+  await screen.findByText("Question 1 of 6");
+  await user.type(screen.getByLabelText("Your answer"), "x");
+  await user.click(screen.getByRole("button", { name: "Submit answer" }));
+  expect(await screen.findByText("No attempts remaining")).toBeInTheDocument();
+  expect(
+    screen.getByText("You have used all attempts for this question."),
+  ).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Submit answer" })).toBeDisabled();
 });
 
 it("shows invalid-link when a submit returns 401", async () => {

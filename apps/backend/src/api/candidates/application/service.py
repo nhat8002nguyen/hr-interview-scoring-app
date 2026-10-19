@@ -14,6 +14,7 @@ from api.candidates.application.ports import (
 from api.candidates.domain.entities import Answer, Candidate
 from api.candidates.domain.exceptions import (
     AnswerNotFoundError,
+    AttemptsExhaustedError,
     CandidateAlreadyExistsError,
     CandidateNotFoundError,
 )
@@ -105,11 +106,17 @@ class AnswersService:
         questions: CatalogService,
         scoring_jobs: ScoringJobPort,
         file_storage: FileStorage,
+        max_submissions: int = 3,
     ) -> None:
         self._uow_factory = uow_factory
         self._questions = questions
         self._scoring_jobs = scoring_jobs
         self._file_storage = file_storage
+        self.max_submissions = max_submissions
+
+    def attempts_remaining(self, answer: Answer | None) -> int:
+        used = 0 if answer is None else answer.version
+        return max(0, self.max_submissions - used)
 
     async def submit_text(
         self,
@@ -143,10 +150,18 @@ class AnswersService:
         filename: str,
     ) -> SubmitResult:
         await self._questions.get_question(question_id)
-        ext = Path(filename).suffix or ".m4a"
-        key = f"audio/{candidate_id}/{question_id}{ext}"
-        await self._file_storage.save(key, data)
         content_hash = sha256(data).hexdigest()
+        async with self._uow_factory() as uow:
+            active = await uow.answers.get_active(candidate_id, question_id)
+        if (
+            active is not None
+            and active.version >= self.max_submissions
+            and active.content_hash != content_hash
+        ):
+            raise AttemptsExhaustedError(question_id, self.max_submissions)
+        ext = Path(filename).suffix or ".m4a"
+        key = f"audio/{candidate_id}/{question_id}/{content_hash}{ext}"
+        await self._file_storage.save(key, data)
         return await self._submit(
             Answer(
                 id=0,
@@ -165,10 +180,13 @@ class AnswersService:
 
     async def _submit(self, answer: Answer, *, status: str) -> SubmitResult:
         async with self._uow_factory() as uow:
-            stored, changed = await uow.answers.upsert(answer)
+            stored, changed = await uow.answers.upsert(answer, max_submissions=self.max_submissions)
         if changed:
             await self._scoring_jobs.reset_for_answer(stored.id, status=status)
-        return SubmitResult(status="received", unchanged=not changed, answer=stored)
+            return SubmitResult(status="received", unchanged=False, answer=stored)
+        if stored.content_hash == answer.content_hash:
+            return SubmitResult(status="received", unchanged=True, answer=stored)
+        raise AttemptsExhaustedError(answer.question_id, self.max_submissions)
 
     async def list_for_candidate(self, candidate_id: int) -> list[Answer]:
         async with self._uow_factory() as uow:
@@ -222,7 +240,8 @@ class AnswersService:
                     version=1,
                     external_ref=external_ref,
                     submitted_at=submitted_at,
-                )
+                ),
+                max_submissions=None,
             )
         if changed:
             await self._scoring_jobs.reset_for_answer(stored.id, status=status)

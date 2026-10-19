@@ -19,8 +19,10 @@ function interview(firstAnswered: boolean) {
               submitted_at: "2026-09-14T10:15:00Z",
             }
           : null,
+      attempts_remaining: 3,
     })),
     progress: { answered: firstAnswered ? 1 : 0, total: 6 },
+    max_submissions: 3,
   };
 }
 
@@ -43,6 +45,7 @@ test("answers, confirms, advances, and resumes on reload", async ({ page }) => {
           version: 1,
           submitted_at: "2026-09-14T10:15:00Z",
         },
+        attempts_remaining: 2,
       },
     });
   });

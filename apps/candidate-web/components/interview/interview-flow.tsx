@@ -37,6 +37,9 @@ export function InterviewFlow({ token }: InterviewFlowProps) {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [advanceError, setAdvanceError] = useState<string | null>(null);
   const [lastUnchanged, setLastUnchanged] = useState(false);
+  const [exhaustedQuestionId, setExhaustedQuestionId] = useState<number | null>(
+    null,
+  );
 
   useEffect(() => {
     let active = true;
@@ -100,6 +103,7 @@ export function InterviewFlow({ token }: InterviewFlowProps) {
   const submitting = submit === "submitting";
 
   async function submitAnswer(
+    questionId: number,
     request: () => Promise<{ unchanged: boolean }>,
   ): Promise<void> {
     setSubmit("submitting");
@@ -114,17 +118,27 @@ export function InterviewFlow({ token }: InterviewFlowProps) {
         setPhase("invalid-link");
         return;
       }
+      if (error instanceof ApiError && error.status === 409) {
+        setExhaustedQuestionId(questionId);
+        setSubmitError("You have used all attempts for this question.");
+        setSubmit("error");
+        return;
+      }
       setSubmitError("Your answer could not be submitted. Please try again.");
       setSubmit("error");
     }
   }
 
   function handleSubmitText(questionId: number, text: string) {
-    return submitAnswer(() => submitTextAnswer(token, questionId, text));
+    return submitAnswer(questionId, () =>
+      submitTextAnswer(token, questionId, text),
+    );
   }
 
   function handleSubmitAudio(questionId: number, file: File) {
-    return submitAnswer(() => submitAudioAnswer(token, questionId, file));
+    return submitAnswer(questionId, () =>
+      submitAudioAnswer(token, questionId, file),
+    );
   }
 
   async function handleContinue() {
@@ -167,6 +181,11 @@ export function InterviewFlow({ token }: InterviewFlowProps) {
 
   if (!interview || !question) return <Loading />;
 
+  const displayQuestion =
+    exhaustedQuestionId === question.id
+      ? { ...question, attempts_remaining: 0 }
+      : question;
+
   if (submit === "received") {
     return (
       <main className="mx-auto flex min-h-screen max-w-2xl flex-col justify-center gap-4 p-8">
@@ -183,8 +202,8 @@ export function InterviewFlow({ token }: InterviewFlowProps) {
   return (
     <main className="mx-auto flex min-h-screen max-w-2xl flex-col justify-center gap-6 p-8">
       <QuestionCard
-        key={question.id}
-        question={question}
+        key={displayQuestion.id}
+        question={displayQuestion}
         index={currentIndex}
         total={interview.questions.length}
         submitting={submitting}

@@ -21,7 +21,7 @@ from pathlib import Path
 
 import asyncpg
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import api.auth.infrastructure.models  # noqa: F401 - register UserModel, RefreshTokenModel
@@ -29,6 +29,7 @@ import api.candidates.infrastructure.models  # noqa: F401 - register CandidateMo
 import api.catalog.infrastructure.models  # noqa: F401 - register RoleModel, QuestionModel
 import api.scoring.infrastructure.models  # noqa: F401 - register ScoringJobModel
 from api.candidates.application.service import AnswersService, CandidatesService
+from api.candidates.domain.entities import Answer
 from api.candidates.infrastructure.models import AnswerModel, CandidateModel
 from api.candidates.infrastructure.storage import LocalFileStorage
 from api.candidates.infrastructure.unit_of_work import CandidatesUnitOfWork
@@ -43,9 +44,7 @@ from api.scoring.infrastructure.models import ScoringJobModel
 from api.scoring.infrastructure.unit_of_work import SqlAlchemyScoringUnitOfWork
 from database import Base, create_engine, create_session_factory
 
-_PACK_DIR = (
-    Path(__file__).resolve().parents[3] / "intial-resources" / "business-systems-pack"
-)
+_PACK_DIR = Path(__file__).resolve().parents[3] / "intial-resources" / "business-systems-pack"
 
 _POSTGRES_USER = "postgres"
 _POSTGRES_PASSWORD = "postgres"
@@ -300,6 +299,108 @@ async def test_import_and_score_end_to_end(
         assert after_job.status == "scored"
         assert after_job.suggested_score == 3
         assert after_job.final_score == 3
+    finally:
+        await engine.dispose()
+
+
+async def test_answer_upsert_enforces_submission_limit(
+    postgres_container: _PostgresContainer,
+) -> None:
+    await _wait_until_ready(postgres_container)
+
+    engine = create_engine(postgres_container.url)
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        session_factory = create_session_factory(engine)
+
+        async with session_factory() as session:
+            role = RoleModel(name="Backend Engineer")
+            session.add(role)
+            await session.flush()
+            question = QuestionModel(
+                code="Q1",
+                sort_order=1,
+                prompt="Tell us about a piece of work.",
+                grading_guide={"1": "No", "4": "Yes"},
+            )
+            session.add(question)
+            await session.flush()
+            candidate = CandidateModel(
+                name="Ada",
+                email="ada@example.com",
+                role_id=role.id,
+                session_token="token-1",
+            )
+            session.add(candidate)
+            await session.flush()
+            session.add(
+                AnswerModel(
+                    candidate_id=candidate.id,
+                    question_id=question.id,
+                    answer_type="text",
+                    text="second",
+                    content_hash="h2",
+                    version=2,
+                    submitted_at=datetime.now(UTC),
+                )
+            )
+            await session.commit()
+            candidate_id = candidate.id
+            question_id = question.id
+
+        def answer(content_hash: str, text: str) -> Answer:
+            return Answer(
+                id=0,
+                candidate_id=candidate_id,
+                question_id=question_id,
+                answer_type="text",
+                text=text,
+                audio_key=None,
+                content_hash=content_hash,
+                version=1,
+                external_ref=None,
+                submitted_at=datetime.now(UTC),
+            )
+
+        async with CandidatesUnitOfWork(session_factory) as uow:
+            written, changed = await uow.answers.upsert(answer("h3", "third"), max_submissions=3)
+        assert changed is True
+        assert written.version == 3
+
+        async with CandidatesUnitOfWork(session_factory) as uow:
+            blocked, changed = await uow.answers.upsert(answer("h4", "fourth"), max_submissions=3)
+        assert changed is False
+        assert blocked.version == 3
+        assert blocked.content_hash == "h3"
+
+        async with session_factory() as session:
+            await session.execute(
+                update(AnswerModel)
+                .where(
+                    AnswerModel.candidate_id == candidate_id,
+                    AnswerModel.question_id == question_id,
+                )
+                .values(content_hash="race2", version=2, text="race start")
+            )
+            await session.commit()
+
+        async with (
+            CandidatesUnitOfWork(session_factory) as first,
+            CandidatesUnitOfWork(session_factory) as second,
+        ):
+            first_result = await first.answers.upsert(answer("race3a", "a"), max_submissions=3)
+            second_task = asyncio.create_task(
+                second.answers.upsert(answer("race3b", "b"), max_submissions=3)
+            )
+            await asyncio.sleep(0.2)
+            await first.session.commit()
+            second_result = await second_task
+            await second.session.commit()
+
+        assert first_result[1] is True
+        assert second_result[1] is False
+        assert second_result[0].version == 3
     finally:
         await engine.dispose()
 
