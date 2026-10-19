@@ -123,7 +123,7 @@ class FakeCatalogService:
         self._next_role_id = 1
         self._next_question_id = 1
 
-    async def list_roles(self) -> list[RoleWithCount]:
+    async def list_roles(self, owner_id: int) -> list[RoleWithCount]:
         return [RoleWithCount(role=role, candidate_count=0) for role in self.roles.values()]
 
     async def list_questions(self) -> list[Question]:
@@ -162,7 +162,7 @@ class FakeCandidatesService:
         self.candidates: dict[str, Candidate] = {}
         self._next_id = 1
 
-    async def get_by_external_ref(self, ref: str) -> Candidate | None:
+    async def get_by_external_ref(self, owner_id: int, ref: str) -> Candidate | None:
         return self.candidates.get(ref)
 
     async def create_candidate(
@@ -297,7 +297,7 @@ async def test_import_parses_questions_and_roles() -> None:
         "3": "Clear personal contribution.",
         "4": "Clear contribution and measured result.",
     }
-    assert sorted(listed.role.name for listed in await catalog.list_roles()) == [
+    assert sorted(listed.role.name for listed in await catalog.list_roles(1)) == [
         "Backend Engineer",
         "Customer Success Associate",
         "Finance Analyst",

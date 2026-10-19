@@ -37,8 +37,15 @@ class FakeCandidateRepository:
     async def get(self, candidate_id: int) -> Candidate | None:
         return self._candidates.get(candidate_id)
 
-    async def get_by_email(self, email: str) -> Candidate | None:
-        return next((c for c in self._candidates.values() if c.email == email), None)
+    async def get_by_email(self, owner_id: int, email: str) -> Candidate | None:
+        return next(
+            (
+                c
+                for c in self._candidates.values()
+                if c.email == email and c.owner_id == owner_id
+            ),
+            None,
+        )
 
     async def get_by_session_token(self, session_token: str) -> Candidate | None:
         return next(
@@ -46,17 +53,29 @@ class FakeCandidateRepository:
             None,
         )
 
-    async def get_by_external_ref(self, external_ref: str) -> Candidate | None:
+    async def get_by_external_ref(self, owner_id: int, external_ref: str) -> Candidate | None:
         return next(
-            (c for c in self._candidates.values() if c.external_ref == external_ref),
+            (
+                c
+                for c in self._candidates.values()
+                if c.external_ref == external_ref and c.owner_id == owner_id
+            ),
             None,
         )
 
-    async def list_by_role(self, role_id: int) -> list[Candidate]:
-        return [c for c in self._candidates.values() if c.role_id == role_id]
+    async def list_by_role(self, owner_id: int, role_id: int) -> list[Candidate]:
+        return [
+            c
+            for c in self._candidates.values()
+            if c.role_id == role_id and c.owner_id == owner_id
+        ]
 
-    async def count_by_role(self, role_id: int) -> int:
-        return sum(1 for c in self._candidates.values() if c.role_id == role_id)
+    async def count_by_role(self, owner_id: int, role_id: int) -> int:
+        return sum(
+            1
+            for c in self._candidates.values()
+            if c.role_id == role_id and c.owner_id == owner_id
+        )
 
 
 class FakeAnswerRepository:

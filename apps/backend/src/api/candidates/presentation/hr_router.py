@@ -89,6 +89,7 @@ def _scoring_detail(snapshot: ScoringSnapshot | None) -> ScoringDetail:
 )
 async def list_candidates_for_role(
     role_id: int,
+    user: CurrentUserDep,
     candidates: CandidatesServiceDep,
     answers: AnswersServiceDep,
     catalog: CatalogServiceDep,
@@ -98,7 +99,7 @@ async def list_candidates_for_role(
     codes = {question.id: question.code for question in questions}
     total = len(questions)
     items: list[CandidateListItem] = []
-    for candidate in await candidates.list_candidates_for_role(role_id):
+    for candidate in await candidates.list_candidates_for_role(role_id, owner_id=user.sub):
         candidate_answers = await answers.list_for_candidate(candidate.id)
         answer_items: list[CandidateAnswerSummary] = []
         for answer in candidate_answers:
@@ -132,13 +133,14 @@ async def list_candidates_for_role(
 )
 async def get_candidate_detail(
     candidate_id: int,
+    user: CurrentUserDep,
     candidates: CandidatesServiceDep,
     answers: AnswersServiceDep,
     catalog: CatalogServiceDep,
     scoring: ScoringReaderDep,
     settings: SettingsDep,
 ) -> CandidateDetailResponse:
-    candidate = await candidates.get_candidate(candidate_id)
+    candidate = await candidates.get_owned_candidate(candidate_id, user.sub)
     questions = await catalog.list_questions()
     codes = {question.id: question.code for question in questions}
     total = len(questions)

@@ -159,7 +159,7 @@ class _MinimalCatalog:
     async def list_questions(self) -> list[Question]:
         return []
 
-    async def list_roles(self) -> list[RoleWithCount]:
+    async def list_roles(self, owner_id: int) -> list[RoleWithCount]:
         return [RoleWithCount(role=role, candidate_count=0) for role in self._roles.values()]
 
     async def ensure_role(self, name: str) -> CatalogRole:

@@ -62,7 +62,7 @@ class CandidatesService:
         external_ref: str | None = None,
     ) -> Candidate:
         async with self._uow_factory() as uow:
-            existing = await uow.candidates.get_by_email(email)
+            existing = await uow.candidates.get_by_email(owner_id, email)
             if existing is not None:
                 raise CandidateAlreadyExistsError(email)
             candidate = Candidate(
@@ -88,17 +88,24 @@ class CandidatesService:
             raise CandidateNotFoundError(id)
         return candidate
 
-    async def get_by_external_ref(self, ref: str) -> Candidate | None:
+    async def get_owned_candidate(self, candidate_id: int, owner_id: int) -> Candidate:
         async with self._uow_factory() as uow:
-            return await uow.candidates.get_by_external_ref(ref)
+            candidate = await uow.candidates.get(candidate_id)
+        if candidate is None or candidate.owner_id != owner_id:
+            raise CandidateNotFoundError(candidate_id)
+        return candidate
 
-    async def list_candidates_for_role(self, role_id: int) -> list[Candidate]:
+    async def get_by_external_ref(self, owner_id: int, ref: str) -> Candidate | None:
         async with self._uow_factory() as uow:
-            return await uow.candidates.list_by_role(role_id)
+            return await uow.candidates.get_by_external_ref(owner_id, ref)
 
-    async def count_by_role(self, role_id: int) -> int:
+    async def list_candidates_for_role(self, role_id: int, owner_id: int) -> list[Candidate]:
         async with self._uow_factory() as uow:
-            return await uow.candidates.count_by_role(role_id)
+            return await uow.candidates.list_by_role(owner_id, role_id)
+
+    async def count_by_role(self, role_id: int, owner_id: int) -> int:
+        async with self._uow_factory() as uow:
+            return await uow.candidates.count_by_role(owner_id, role_id)
 
 
 class AnswersService:

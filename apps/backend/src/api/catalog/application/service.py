@@ -20,13 +20,13 @@ class CatalogService:
         self._uow_factory = uow_factory
         self._counter = counter
 
-    async def list_roles(self) -> list[RoleWithCount]:
+    async def list_roles(self, owner_id: int) -> list[RoleWithCount]:
         async with self._uow_factory() as uow:
             roles = await uow.roles.list()
         return [
             RoleWithCount(
                 role=role,
-                candidate_count=await self._counter.count_by_role(role.id),
+                candidate_count=await self._counter.count_by_role(role.id, owner_id),
             )
             for role in roles
         ]

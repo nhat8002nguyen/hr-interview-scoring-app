@@ -220,7 +220,7 @@ class ImportService:
             )
 
         role_by_name = {
-            listed.role.name: listed.role for listed in await self._catalog.list_roles()
+            listed.role.name: listed.role for listed in await self._catalog.list_roles(owner_id)
         }
         roles_created = 0
         for name in role_names:
@@ -248,7 +248,7 @@ class ImportService:
             if question is None:
                 raise InvalidImportError(f"unknown question code {question_code!r}")
 
-            candidate = await self._candidates.get_by_external_ref(candidate_ref)
+            candidate = await self._candidates.get_by_external_ref(owner_id, candidate_ref)
             if candidate is None:
                 candidate = await self._create_candidate(
                     candidate_ref,
