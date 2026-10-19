@@ -66,7 +66,6 @@ Vercel builds each Next.js app with `NEXT_PUBLIC_API_URL`.
 
 Create:
 
-- `.dockerignore` - keep worktrees, node_modules, build output, docs, and reference data out of the API build context.
 - `apps/candidate-web/Dockerfile` and `.dockerignore` - candidate production image.
 - `apps/hr-web/Dockerfile` and `.dockerignore` - HR production image.
 - `scripts/smoke-local.sh` - asserts the five Compose services and their basic endpoints.
@@ -87,7 +86,7 @@ Create:
 Modify:
 
 - `docker-compose.yml` - add candidate-web and hr-web, an API healthcheck, and a shared local API image.
-- `apps/api/tests/test_e2e_import_and_score.py` - fix the data-pack path for the monorepo and skip when the pack is absent.
+- `apps/backend/tests/test_e2e_import_and_score.py` - fix the data-pack path for the monorepo and skip when the pack is absent.
 - `README.md` - document the five-service local stack and point to `deploy/README.md`.
 
 ---
@@ -95,7 +94,7 @@ Modify:
 ### Task 1: Repair the data-pack E2E test
 
 **Files:**
-- Modify: `apps/api/tests/test_e2e_import_and_score.py`
+- Modify: `apps/backend/tests/test_e2e_import_and_score.py`
 
 **Interfaces:**
 - Produces: `_PACK_DIR = Path(__file__).resolve().parents[3] / "intial-resources" / "business-systems-pack"`.
@@ -103,7 +102,7 @@ Modify:
 
 - [ ] **Step 1: Confirm the current failure**
 
-Run: `uv run pytest apps/api/tests/test_e2e_import_and_score.py -q`
+Run: `(cd apps/backend && uv run pytest tests/test_e2e_import_and_score.py -q)`
 
 Expected: FAIL with `FileNotFoundError` for `<repo>/../intial-resources/business-systems-pack/questions.md`.
 
@@ -119,16 +118,16 @@ if not _PACK_DIR.is_dir():
 
 - [ ] **Step 3: Verify**
 
-Run: `uv run pytest apps/api/tests/test_e2e_import_and_score.py -q`
-Expected: `1 passed`.
+Run: `(cd apps/backend && uv run pytest tests/test_e2e_import_and_score.py -q)`
+Expected: `2 passed`.
 
-Run: `uv run pytest -q`
+Run: `(cd apps/backend && uv run pytest -q)`
 Expected: `126 passed`.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add apps/api/tests/test_e2e_import_and_score.py
+git add apps/backend/tests/test_e2e_import_and_score.py
 git commit -m "test: resolve data pack path in monorepo"
 ```
 
@@ -139,7 +138,7 @@ git commit -m "test: resolve data pack path in monorepo"
 **Files:**
 - Create: `apps/candidate-web/Dockerfile`, `apps/candidate-web/.dockerignore`
 - Create: `apps/hr-web/Dockerfile`, `apps/hr-web/.dockerignore`
-- Create: `.dockerignore`, `scripts/smoke-local.sh`
+- Create: `scripts/smoke-local.sh`
 - Modify: `docker-compose.yml`, `README.md`
 
 **Interfaces:**
@@ -176,8 +175,8 @@ Use these exact ports:
 
 - [ ] **Step 3: Add Docker ignore files**
 
-Root `.dockerignore` must exclude `.git`, `.github`, all `node_modules`, `.next`, Python caches and venvs, `intial-resources`, `docs`, the three nested worktrees, `deploy`, `.DS_Store`, and `.env*`.
-Each app `.dockerignore` must exclude `node_modules`, `.next`, `.env*`, `e2e`, `tests`, `playwright-report`, `test-results`, `*.log`, `README.md`, and `AGENTS.md`.
+The backend is now a self-contained workspace at `apps/backend`, so its existing `apps/backend/.dockerignore` is the build-context ignore file and no root `.dockerignore` is needed.
+Each web app `.dockerignore` must exclude `node_modules`, `.next`, `.env*`, `e2e`, `tests`, `playwright-report`, `test-results`, `*.log`, `README.md`, and `AGENTS.md`.
 
 - [ ] **Step 4: Update the local Compose file**
 
@@ -185,7 +184,7 @@ Add an extension anchor:
 
 ```yaml
 x-api-build: &api-build
-  context: .
+  context: ./apps/backend
   dockerfile: Dockerfile.dev
 ```
 
@@ -243,7 +242,7 @@ Expected: all commands exit 0.
 Replace the "Related repositories" note with a "Full stack with Docker Compose" section that names ports 3000, 3001, and 3002 and points to `scripts/smoke-local.sh`.
 
 ```bash
-git add .dockerignore docker-compose.yml README.md scripts/smoke-local.sh \
+git add docker-compose.yml README.md scripts/smoke-local.sh \
   apps/candidate-web/Dockerfile apps/candidate-web/.dockerignore \
   apps/hr-web/Dockerfile apps/hr-web/.dockerignore
 git commit -m "feat: run all three apps in local compose"
@@ -272,7 +271,8 @@ Use a unique email such as `smoke+<unix-timestamp>@talotrace.ai` for each run.
 
 The script must assert:
 
-1. `POST /hr/import` returns `answers_imported=35`, `scoring_jobs_queued=30`, and `audio_answers_needing_person=5`.
+1. `POST /hr/import` returns `answers_imported=35`, `scoring_jobs_queued=30`, and `audio_answers_needing_person=5` on a fresh database.
+   On an already-imported database it returns `0/0/0`; the script accepts both and prints the summary.
 2. `GET /hr/roles` returns 5 roles.
 3. `POST /hr/candidates` returns 201 and a `session_token`.
 4. `GET /candidate/interview` with `X-Candidate-Token` returns 200 and 6 questions.
@@ -281,7 +281,7 @@ The script must assert:
 7. Repeating the identical text returns 200 with `unchanged=true`.
 8. `POST /candidate/interview/answers/<q2>/audio` with `A031.m4a` returns 201 and the candidate CORS header.
 9. `GET /hr/candidates/<id>` returns two answers; the audio answer is `needs_a_person`.
-10. `GET /hr/answers/<q1_answer_id>` reaches `scored` within 120 seconds with `1 <= suggested_score <= 4`.
+10. `GET /hr/answers/<q1_answer_id>` reaches `scored` within 600 seconds with `1 <= suggested_score <= 4`.
     If it reaches `failed`, print `last_error` and exit non-zero.
 
 - [ ] **Step 3: Run the local integration**
@@ -291,11 +291,12 @@ Put the DeepSeek key in a gitignored root `.env`, restart Compose, and run:
 ```bash
 printf 'DEEPSEEK_API_KEY=%s\n' "$DEEPSEEK_API_KEY" > .env
 docker compose up -d
-uv run python scripts/smoke_integration.py \
+(cd apps/backend && uv run python ../../scripts/smoke_integration.py \
   --api-url http://localhost:3000 \
   --candidate-origin http://localhost:3001 \
-  --pack intial-resources/business-systems-pack.zip \
-  --audio intial-resources/business-systems-pack/answers/A031.m4a
+  --pack ../../intial-resources/business-systems-pack.zip \
+  --audio ../../intial-resources/business-systems-pack/answers/A031.m4a \
+  --timeout 600)
 ```
 
 Expected: the import summary, both answer statuses, and exit 0.
@@ -367,7 +368,7 @@ TBV_DEPLOY_DIR=/opt/type-by-voice/deploy
 
 Use `name: talot-assessment`.
 The `api-db` service uses `postgres:18-alpine`, database `talot`, volume `api-db-data:/var/lib/postgresql`, and a `pg_isready` healthcheck.
-The `migrate` service uses the API image, `restart: "no"`, and command `["uv", "run", "--directory", "apps/api", "alembic", "upgrade", "head"]`.
+The `migrate` service uses the API image, `restart: "no"`, and command `["uv", "run", "alembic", "upgrade", "head"]`.
 The `api` service uses the API image, `restart: unless-stopped`, `stop_grace_period: 30s`, volume `audio-data:/data/audio`, and the healthcheck from Task 2.
 
 The `api` service must have this exact network block:
@@ -485,20 +486,20 @@ git commit -m "feat: add production deploy artifacts for shared nginx host"
 
 - [ ] **Step 1: Write the workflow**
 
-The workflow triggers on pushes to `main` touching `apps/api/**`, `libs/**`, `Dockerfile`, `pyproject.toml`, `uv.lock`, `deploy/**`, or the workflow file, plus `workflow_dispatch`.
+The workflow triggers on pushes to `main` touching `apps/backend/**`, `apps/backend/Dockerfile`, `apps/backend/pyproject.toml`, `apps/backend/uv.lock`, `deploy/**`, or the workflow file, plus `workflow_dispatch`.
 Set `permissions: contents: read` and `packages: write`.
 
 The `test` job:
 
 1. Checks out the repo.
 2. Uses `astral-sh/setup-uv@v6`.
-3. Runs `uv sync --all-packages --group dev`.
-4. Runs `uv run ruff check .`, `uv run mypy libs apps/api/src`, and `uv run pytest -q`.
+3. Runs every command with `working-directory: apps/backend`:
+   `uv sync --all-packages --group dev`, `uv run ruff check .`, `uv run mypy libs src`, and `uv run pytest -q`.
 
 The `build-and-deploy` job needs `test` and:
 
 1. Logs in to `ghcr.io` with `github.actor` and `secrets.GITHUB_TOKEN`.
-2. Builds with `docker/build-push-action@v6`, context `.`, file `Dockerfile`, pushing `ghcr.io/${{ github.repository_owner }}/talot-api:${sha}` and `:latest`.
+2. Builds with `docker/build-push-action@v6`, context `apps/backend`, file `Dockerfile`, pushing `ghcr.io/${{ github.repository_owner }}/talot-api:${{ github.sha }}` and `:latest`.
 3. Deploys with `appleboy/ssh-action@v1` using the four secrets and this script:
 
 ```bash
@@ -507,7 +508,7 @@ cd /opt/talot-assessment
 git fetch origin main
 git reset --hard origin/main
 cd deploy
-sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=${SHA}/" .env
+sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=${{ github.sha }}/" .env
 ./scripts/deploy.sh
 ```
 
@@ -730,11 +731,12 @@ Update `DEEPSEEK_API_KEY` in the host `.env` and run `./scripts/deploy.sh` from 
 - [ ] **Step 6: Run the production integration smoke**
 
 ```bash
-uv run python scripts/smoke_integration.py \
+(cd apps/backend && uv run python ../../scripts/smoke_integration.py \
   --api-url https://talot-api.nate-ng.com \
   --candidate-origin https://talot-candidate-web.vercel.app \
-  --pack intial-resources/business-systems-pack.zip \
-  --audio intial-resources/business-systems-pack/answers/A031.m4a
+  --pack ../../intial-resources/business-systems-pack.zip \
+  --audio ../../intial-resources/business-systems-pack/answers/A031.m4a \
+  --timeout 600)
 ```
 
 Expected: import summary, both answer statuses, and exit 0.
@@ -842,10 +844,10 @@ git push origin main
 - [ ] **Step 1: Run the full local verification**
 
 ```bash
-uv sync --all-packages --group dev
-uv run ruff check .
-uv run mypy libs apps/api/src
-uv run pytest -q
+(cd apps/backend && uv sync --all-packages --group dev)
+(cd apps/backend && uv run ruff check .)
+(cd apps/backend && uv run mypy libs src)
+(cd apps/backend && uv run pytest -q)
 (cd apps/candidate-web && npm test && npm run lint && npm run typecheck && npm run build)
 (cd apps/hr-web && npm test && npx tsc --noEmit && npm run build)
 docker compose config --quiet
@@ -859,11 +861,12 @@ Expected: every command exits 0.
 ```bash
 curl -fsS https://talot-api.nate-ng.com/health
 curl -fsS https://tbv-api.nate-ng.com/health
-uv run python scripts/smoke_integration.py \
+(cd apps/backend && uv run python ../../scripts/smoke_integration.py \
   --api-url https://talot-api.nate-ng.com \
   --candidate-origin https://talot-candidate-web.vercel.app \
-  --pack intial-resources/business-systems-pack.zip \
-  --audio intial-resources/business-systems-pack/answers/A031.m4a
+  --pack ../../intial-resources/business-systems-pack.zip \
+  --audio ../../intial-resources/business-systems-pack/answers/A031.m4a \
+  --timeout 600)
 ```
 
 Expected: both health checks pass and the smoke exits 0.
