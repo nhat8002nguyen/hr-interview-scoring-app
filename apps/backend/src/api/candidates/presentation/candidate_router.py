@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, File, UploadFile, status
 from fastapi.responses import JSONResponse
 
-from api.candidates.application.service import SubmitResult
+from api.candidates.application.service import AnswersService, SubmitResult
 from api.candidates.domain.entities import Answer
 from api.candidates.presentation.dependencies import (
     AnswersServiceDep,
@@ -21,6 +21,7 @@ from api.candidates.presentation.schemas import (
     SubmittedAnswer,
     TextAnswerBody,
 )
+from api.catalog.domain.entities import Question
 
 candidate_router = APIRouter(prefix="/candidate", tags=["candidate"])
 
@@ -44,11 +45,25 @@ def _submitted_answer(answer: Answer) -> SubmittedAnswer:
     )
 
 
-def _submit_response(result: SubmitResult) -> SubmitResponse:
+def _interview_question(
+    question: Question, answer: Answer | None, answers: AnswersService
+) -> InterviewQuestion:
+    return InterviewQuestion(
+        id=question.id,
+        code=question.code,
+        sort_order=question.sort_order,
+        prompt=question.prompt,
+        answer=_interview_answer(answer),
+        attempts_remaining=answers.attempts_remaining(answer),
+    )
+
+
+def _submit_response(result: SubmitResult, answers: AnswersService) -> SubmitResponse:
     return SubmitResponse(
         status=result.status,
         unchanged=result.unchanged,
         answer=_submitted_answer(result.answer),
+        attempts_remaining=answers.attempts_remaining(result.answer),
     )
 
 
@@ -69,16 +84,11 @@ async def get_interview(
             role=role.name,
         ),
         questions=[
-            InterviewQuestion(
-                id=question.id,
-                code=question.code,
-                sort_order=question.sort_order,
-                prompt=question.prompt,
-                answer=_interview_answer(answers_by_question.get(question.id)),
-            )
+            _interview_question(question, answers_by_question.get(question.id), answers)
             for question in questions
         ],
         progress=Progress(answered=len(active), total=len(questions)),
+        max_submissions=answers.max_submissions,
     )
 
 
@@ -96,7 +106,7 @@ async def submit_text(
     if not body.text.strip():
         raise CandidateValidationError("text must not be empty")
     result = await answers.submit_text(candidate.id, question_id, body.text)
-    return _submit_or_unchanged(result)
+    return _submit_or_unchanged(result, answers)
 
 
 @candidate_router.post(
@@ -119,11 +129,13 @@ async def submit_audio(
         data,
         file.filename or "audio.m4a",
     )
-    return _submit_or_unchanged(result)
+    return _submit_or_unchanged(result, answers)
 
 
-def _submit_or_unchanged(result: SubmitResult) -> SubmitResponse | JSONResponse:
-    response = _submit_response(result)
+def _submit_or_unchanged(
+    result: SubmitResult, answers: AnswersService
+) -> SubmitResponse | JSONResponse:
+    response = _submit_response(result, answers)
     if result.unchanged:
         return JSONResponse(
             status_code=status.HTTP_200_OK,

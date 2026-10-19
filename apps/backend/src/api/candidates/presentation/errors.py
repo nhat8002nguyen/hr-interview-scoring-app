@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 
 from api.candidates.domain.exceptions import (
     AnswerNotFoundError,
+    AttemptsExhaustedError,
     CandidateAlreadyExistsError,
     CandidateNotFoundError,
 )
@@ -27,6 +28,10 @@ def register_candidates_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AnswerNotFoundError)
     async def answer_not_found(_: Request, exc: AnswerNotFoundError) -> JSONResponse:
         return _problem(404, "Not Found", str(exc))
+
+    @app.exception_handler(AttemptsExhaustedError)
+    async def attempts_exhausted(_: Request, exc: AttemptsExhaustedError) -> JSONResponse:
+        return _problem(409, "Conflict", str(exc))
 
     @app.exception_handler(CandidateValidationError)
     async def candidate_validation_error(
