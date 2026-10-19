@@ -23,6 +23,7 @@ class Settings(JwtSettings):
     audio_storage_dir: str = "/tmp/talotrace-audio"
     seed_hr_email: str = "hr@talotrace.ai"
     seed_hr_password: str = "change-me"
+    password_min_length: int = 8
 
     @field_validator("cors_origins", mode="before")
     @classmethod

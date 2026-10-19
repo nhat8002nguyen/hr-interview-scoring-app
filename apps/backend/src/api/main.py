@@ -58,6 +58,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             hashing,
             jwt,
             TransactionalRefreshTokenStorage(session_factory),
+            min_password_length=configured.password_min_length,
         )
         candidates = CandidatesService(
             lambda: CandidatesUnitOfWork(session_factory),

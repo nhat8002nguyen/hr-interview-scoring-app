@@ -8,6 +8,7 @@ from api.auth.presentation.schemas import (
     HrUserResponse,
     RefreshTokenBody,
     SignOutBody,
+    SignUpBody,
 )
 from iam import AuthType, require_auth
 
@@ -26,6 +27,20 @@ async def sign_in(
     service: AuthenticationServiceDep,
 ) -> AuthTokensResponse:
     tokens = await service.sign_in(body.email, body.password)
+    return _to_response(tokens)
+
+
+@auth_router.post(
+    "/sign-up",
+    response_model=AuthTokensResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(_require_none)],
+)
+async def sign_up(
+    body: SignUpBody,
+    service: AuthenticationServiceDep,
+) -> AuthTokensResponse:
+    tokens = await service.sign_up(body.email, body.password)
     return _to_response(tokens)
 
 

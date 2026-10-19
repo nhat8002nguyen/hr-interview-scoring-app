@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
 
 from iam import Role
 
@@ -6,6 +6,11 @@ from iam import Role
 class CredentialsBody(BaseModel):
     email: str
     password: str
+
+
+class SignUpBody(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=1)
 
 
 class RefreshTokenBody(BaseModel):

@@ -2,6 +2,7 @@ import pytest
 
 from api.auth.application.service import AuthenticationService, AuthTokens
 from api.auth.domain.entities import User
+from api.auth.domain.exceptions import EmailAlreadyExistsError, WeakPasswordError
 from iam import ActiveUserData, JwtService, Role, UnauthorizedError
 
 SECRET = "test-secret-key-at-least-32-bytes"
@@ -171,3 +172,52 @@ async def test_sign_out_without_token_is_noop() -> None:
     await service.sign_out(None)
 
     assert refresh_tokens.revoked == []
+
+
+async def test_sign_up_creates_hr_and_issues_tokens() -> None:
+    users = FakeUserRepository()
+    refresh_tokens = FakeRefreshTokenStorage()
+    service = AuthenticationService(
+        users=users,
+        hashing=FakeHashingService(),
+        jwt=_jwt(),
+        refresh_tokens=refresh_tokens,
+    )
+
+    tokens = await service.sign_up("new@example.com", "password123")
+
+    assert tokens.user.role == Role.HR
+    assert tokens.user.email == "new@example.com"
+
+    stored = await users.get_by_email("new@example.com")
+    assert stored is not None
+    assert stored.role == Role.HR
+    assert stored.password_hash == "hashed:password123"
+
+    assert len(refresh_tokens.saved) == 1
+    assert refresh_tokens.saved[0][1] == tokens.user.id
+
+
+async def test_sign_up_duplicate_email_raises() -> None:
+    existing = User(id=7, email="new@example.com", password_hash="hashed:x", role=Role.HR)
+    service = AuthenticationService(
+        users=FakeUserRepository(by_email={existing.email: existing}),
+        hashing=FakeHashingService(),
+        jwt=_jwt(),
+        refresh_tokens=FakeRefreshTokenStorage(),
+    )
+
+    with pytest.raises(EmailAlreadyExistsError):
+        await service.sign_up("new@example.com", "password123")
+
+
+async def test_sign_up_short_password_raises() -> None:
+    service = AuthenticationService(
+        users=FakeUserRepository(),
+        hashing=FakeHashingService(),
+        jwt=_jwt(),
+        refresh_tokens=FakeRefreshTokenStorage(),
+    )
+
+    with pytest.raises(WeakPasswordError):
+        await service.sign_up("new@example.com", "short")
