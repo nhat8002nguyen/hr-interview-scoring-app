@@ -81,7 +81,7 @@ Row-Level Security was rejected because the app uses a single shared database ro
 Setting a per-request tenant id would fight the pool and is overkill at this scale.
 
 The cost of the chosen option is that correctness depends on a single scoped-read choke point being used everywhere.
-That choke point is a dependency (`require_owned_candidate`) every HR endpoint uses, backed by isolation tests.
+The choke point is the scoped-read methods in section 8.1, every one of which an HR endpoint uses, backed by isolation tests.
 
 ## 5. Data Model Changes
 
@@ -177,7 +177,9 @@ Response `201` (same shape as sign-in):
 ### 7.3 Validation and config
 
 - `SignUpBody.email` is a Pydantic `EmailStr` (adds the small `email-validator` dependency).
-- `SignUpBody.password` has `min_length` from a new setting `password_min_length` (default `8`).
+- `SignUpBody.password` only requires a non-empty value (`min_length=1`).
+- The password minimum is enforced in `AuthenticationService`, which takes `min_password_length` wired from `Settings.password_min_length` (default `8`).
+  A too-short password raises `WeakPasswordError`, mapped to `422`.
 - No composition rules.
 
 ## 8. Authorization - Ownership Scoping
@@ -186,8 +188,13 @@ Response `201` (same shape as sign-in):
 
 The caller's id comes from the existing `CurrentUserDep` (`ActiveUserData.sub`).
 
-A new dependency `require_owned_candidate(candidate_id)` loads the candidate and raises `CandidateNotFoundError` (mapped to `404`) unless `candidate.owner_id == user.sub`.
-Answer and scoring-job endpoints first resolve their candidate, then reuse this dependency.
+Ownership is enforced in the scoped-read choke points:
+
+- `CandidatesService.get_owned_candidate(candidate_id, owner_id)` loads the candidate and raises `CandidateNotFoundError` unless `candidate.owner_id == owner_id`.
+- `AnswersService.get_owned(answer_id, owner_id)` loads the answer, resolves its candidate, and raises `AnswerNotFoundError` unless the candidate is owned.
+- The scoring repository's `get_owned(job_id, owner_id)` is used by `ScoringService.retry` to load a job; a non-owned or missing job raises `ScoringJobNotFoundError`.
+
+Each of these not-found errors is mapped to `404`, so "not yours" and "does not exist" are indistinguishable.
 
 Every HR endpoint threads `owner_id` into its service call.
 No HR endpoint reads or mutates a candidate, answer, or job without an ownership check.

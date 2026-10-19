@@ -100,7 +100,7 @@ They are never written by the browser, never placed in localStorage or sessionSt
 - **Sign out:** `POST /api/auth/sign-out` calls FastAPI `POST /auth/sign-out` with the refresh token, then clears both cookies.
 - **Refresh:** when a route handler receives `401` from FastAPI, it reads `hr_refresh`, calls `POST /auth/refresh-tokens`, and rewrites both cookies.
   The retry uses the new access token.
-- **Guard:** `middleware.ts` checks for the presence of the session cookies on protected routes and redirects unauthenticated visitors to `/sign-in`.
+- **Guard:** `proxy.ts` checks for the presence of the session cookies on protected routes and redirects unauthenticated visitors to `/sign-in`.
   `/sign-in` and `/sign-up` are public; all other pages are behind the guard.
   The middleware performs no network I/O and no token validation; it is a UX guard, not a security boundary.
 
