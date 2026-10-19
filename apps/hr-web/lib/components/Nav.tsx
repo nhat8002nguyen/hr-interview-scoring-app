@@ -24,6 +24,9 @@ export function Nav() {
         <Link href="/roles" className="text-slate-600 hover:underline">
           Roles
         </Link>
+        <Link href="/candidates/new" className="text-slate-600 hover:underline">
+          Add candidate
+        </Link>
         <Link href="/scoring-jobs" className="text-slate-600 hover:underline">
           Scoring jobs
         </Link>
