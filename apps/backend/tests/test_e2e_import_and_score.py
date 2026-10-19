@@ -480,3 +480,99 @@ async def test_claim_is_exclusive(
         assert second is None
     finally:
         await engine.dispose()
+
+
+async def test_scoring_list_and_get_owned_scope_by_owner(
+    postgres_container: _PostgresContainer,
+) -> None:
+    await _wait_until_ready(postgres_container)
+
+    engine = create_engine(postgres_container.url)
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        session_factory = create_session_factory(engine)
+
+        async with session_factory() as session:
+            owner_a = UserModel(email="owner-a@example.com", password_hash="x", role="hr")
+            owner_b = UserModel(email="owner-b@example.com", password_hash="x", role="hr")
+            session.add_all([owner_a, owner_b])
+            await session.flush()
+
+            role = RoleModel(name="Backend Engineer")
+            session.add(role)
+            await session.flush()
+
+            question = QuestionModel(
+                code="Q1",
+                sort_order=1,
+                prompt="Tell us about a piece of work.",
+                grading_guide={"1": "No", "4": "Yes"},
+            )
+            session.add(question)
+            await session.flush()
+
+            candidate_a = CandidateModel(
+                name="Ada",
+                email="ada-a@example.com",
+                role_id=role.id,
+                owner_id=owner_a.id,
+                session_token="token-a",
+            )
+            candidate_b = CandidateModel(
+                name="Grace",
+                email="grace-b@example.com",
+                role_id=role.id,
+                owner_id=owner_b.id,
+                session_token="token-b",
+            )
+            session.add_all([candidate_a, candidate_b])
+            await session.flush()
+
+            answer_a = AnswerModel(
+                candidate_id=candidate_a.id,
+                question_id=question.id,
+                answer_type="text",
+                text="hello a",
+                content_hash="hash-a",
+                version=1,
+                submitted_at=datetime.now(UTC),
+            )
+            answer_b = AnswerModel(
+                candidate_id=candidate_b.id,
+                question_id=question.id,
+                answer_type="text",
+                text="hello b",
+                content_hash="hash-b",
+                version=1,
+                submitted_at=datetime.now(UTC),
+            )
+            session.add_all([answer_a, answer_b])
+            await session.flush()
+
+            job_a = ScoringJobModel(answer_id=answer_a.id, status="queued")
+            job_b = ScoringJobModel(answer_id=answer_b.id, status="queued")
+            session.add_all([job_a, job_b])
+            await session.flush()
+
+            owner_a_id = owner_a.id
+            owner_b_id = owner_b.id
+            job_a_id = job_a.id
+            job_b_id = job_b.id
+            await session.commit()
+
+        scoring = ScoringService(lambda: SqlAlchemyScoringUnitOfWork(session_factory))
+
+        a_jobs = await scoring.list_jobs("queued", owner_a_id)
+        b_jobs = await scoring.list_jobs("queued", owner_b_id)
+        assert [job.id for job in a_jobs] == [job_a_id]
+        assert [job.id for job in b_jobs] == [job_b_id]
+
+        async with SqlAlchemyScoringUnitOfWork(session_factory) as uow:
+            owned = await uow.scoring_jobs.get_owned(job_a_id, owner_a_id)
+            cross = await uow.scoring_jobs.get_owned(job_a_id, owner_b_id)
+
+        assert owned is not None and owned.id == job_a_id
+        assert cross is None
+    finally:
+        await engine.dispose()
