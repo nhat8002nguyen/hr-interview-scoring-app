@@ -19,6 +19,7 @@ export interface Question {
   sort_order: number;
   prompt: string;
   answer: Answer | null;
+  attempts_remaining: number;
 }
 
 export interface Progress {
@@ -30,6 +31,7 @@ export interface InterviewResponse {
   candidate: Candidate;
   questions: Question[];
   progress: Progress;
+  max_submissions: number;
 }
 
 export interface SubmitResponse {
@@ -40,6 +42,7 @@ export interface SubmitResponse {
     version: number;
     submitted_at: string;
   };
+  attempts_remaining: number;
 }
 
 export interface ProblemDetails {

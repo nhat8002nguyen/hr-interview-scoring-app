@@ -7,6 +7,7 @@ it("renders a textarea and a Type/Upload audio toggle", () => {
     <AnswerInput
       questionId={1}
       initialAnswer={null}
+      attemptsRemaining={3}
       submitting={false}
       onSubmitText={vi.fn()}
       onSubmitAudio={vi.fn()}
@@ -27,6 +28,7 @@ it("prefills text from initialAnswer", () => {
     <AnswerInput
       questionId={1}
       initialAnswer={answer}
+      attemptsRemaining={3}
       submitting={false}
       onSubmitText={vi.fn()}
       onSubmitAudio={vi.fn()}
@@ -41,6 +43,7 @@ it("disables submit while text is empty or whitespace", async () => {
     <AnswerInput
       questionId={1}
       initialAnswer={null}
+      attemptsRemaining={3}
       submitting={false}
       onSubmitText={vi.fn()}
       onSubmitAudio={vi.fn()}
@@ -59,6 +62,7 @@ it("calls onSubmitText with the question id and text", async () => {
     <AnswerInput
       questionId={3}
       initialAnswer={null}
+      attemptsRemaining={3}
       submitting={false}
       onSubmitText={onSubmitText}
       onSubmitAudio={vi.fn()}
@@ -76,6 +80,7 @@ it("calls onSubmitAudio with the selected file", async () => {
     <AnswerInput
       questionId={2}
       initialAnswer={null}
+      attemptsRemaining={3}
       submitting={false}
       onSubmitText={vi.fn()}
       onSubmitAudio={onSubmitAudio}
@@ -86,4 +91,49 @@ it("calls onSubmitAudio with the selected file", async () => {
   await user.upload(screen.getByLabelText("Audio file"), file);
   await user.click(screen.getByRole("button", { name: "Submit answer" }));
   expect(onSubmitAudio).toHaveBeenCalledWith(2, file);
+});
+
+it("shows the number of attempts remaining", () => {
+  render(
+    <AnswerInput
+      questionId={1}
+      initialAnswer={null}
+      attemptsRemaining={2}
+      submitting={false}
+      onSubmitText={vi.fn()}
+      onSubmitAudio={vi.fn()}
+    />,
+  );
+  expect(screen.getByText("2 attempts remaining")).toBeInTheDocument();
+});
+
+it("uses singular wording for one remaining attempt", () => {
+  render(
+    <AnswerInput
+      questionId={1}
+      initialAnswer={null}
+      attemptsRemaining={1}
+      submitting={false}
+      onSubmitText={vi.fn()}
+      onSubmitAudio={vi.fn()}
+    />,
+  );
+  expect(screen.getByText("1 attempt remaining")).toBeInTheDocument();
+});
+
+it("disables submit when no attempts remain", async () => {
+  const user = userEvent.setup();
+  render(
+    <AnswerInput
+      questionId={1}
+      initialAnswer={null}
+      attemptsRemaining={0}
+      submitting={false}
+      onSubmitText={vi.fn()}
+      onSubmitAudio={vi.fn()}
+    />,
+  );
+  await user.type(screen.getByLabelText("Your answer"), "my answer");
+  expect(screen.getByText("No attempts remaining")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Submit answer" })).toBeDisabled();
 });

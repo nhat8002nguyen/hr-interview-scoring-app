@@ -36,6 +36,7 @@ function buildQuestions(answered: number[] = []): Question[] {
           submitted_at: "t",
         }
       : null,
+    attempts_remaining: 3,
   }));
 }
 
@@ -44,6 +45,7 @@ function interview(answered: number[] = []): InterviewResponse {
     candidate: { id: 1, name: "Nhi", role: "Backend Engineer" },
     questions: buildQuestions(answered),
     progress: { answered: answered.length, total: 6 },
+    max_submissions: 3,
   };
 }
 
@@ -54,6 +56,7 @@ const received: SubmitResponse = {
   status: "received",
   unchanged: false,
   answer: { answer_type: "text", version: 1, submitted_at: "t" },
+  attempts_remaining: 2,
 };
 
 beforeEach(() => {
