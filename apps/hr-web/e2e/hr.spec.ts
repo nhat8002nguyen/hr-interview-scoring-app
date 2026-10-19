@@ -17,7 +17,7 @@ test("browse from roles to an answer", async ({ page }) => {
   await page.locator('a[href^="/roles/"]').first().click();
   await expect(page.getByRole("heading", { name: "Candidates" })).toBeVisible();
 
-  await page.locator('a[href^="/candidates/"]').first().click();
+  await page.locator('main a[href^="/candidates/"]').first().click();
   await expect(page.getByRole("heading", { name: "Candidate" })).toBeVisible();
 
   await page.locator('a[href^="/answers/"]').first().click();
@@ -27,7 +27,7 @@ test("browse from roles to an answer", async ({ page }) => {
 
 test("override a score with a reason", async ({ page }) => {
   await page.locator('a[href^="/roles/"]').first().click();
-  await page.locator('a[href^="/candidates/"]').first().click();
+  await page.locator('main a[href^="/candidates/"]').first().click();
   await page.locator('a[href^="/answers/"]').first().click();
 
   await page.getByRole("combobox", { name: "Score", exact: true }).selectOption("4");
