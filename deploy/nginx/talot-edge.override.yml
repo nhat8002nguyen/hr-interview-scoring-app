@@ -1,0 +1,9 @@
+services:
+  nginx:
+    networks:
+      - default
+      - talot-edge
+
+networks:
+  talot-edge:
+    external: true

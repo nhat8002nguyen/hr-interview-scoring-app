@@ -1,0 +1,79 @@
+name: talot-assessment
+
+x-api-env: &api-env
+  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@api-db:5432/talot
+  JWT_SECRET: ${JWT_SECRET}
+  CORS_ORIGINS: ${CORS_ORIGINS}
+  CANDIDATE_WEB_ORIGIN: ${CANDIDATE_WEB_ORIGIN}
+  DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+  DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
+  AUDIO_STORAGE_DIR: /data/audio
+  SCORING_WORKERS: ${SCORING_WORKERS:-2}
+  SCORING_MAX_ATTEMPTS: ${SCORING_MAX_ATTEMPTS:-3}
+  SEED_HR_EMAIL: ${SEED_HR_EMAIL:-hr@talotrace.ai}
+  SEED_HR_PASSWORD: ${SEED_HR_PASSWORD}
+
+services:
+  api-db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: talot
+    volumes:
+      - api-db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d talot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    mem_limit: 256m
+
+  migrate:
+    image: ghcr.io/${GHCR_OWNER}/talot-api:${IMAGE_TAG}
+    restart: "no"
+    command: ["uv", "run", "alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@api-db:5432/talot
+    depends_on:
+      api-db:
+        condition: service_healthy
+
+  api:
+    image: ghcr.io/${GHCR_OWNER}/talot-api:${IMAGE_TAG}
+    restart: unless-stopped
+    stop_grace_period: 30s
+    environment: *api-env
+    volumes:
+      - audio-data:/data/audio
+    depends_on:
+      api-db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      default:
+      talot-edge:
+        aliases:
+          - talot-api
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3000/health', timeout=3)"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    mem_limit: 512m
+
+networks:
+  default:
+  talot-edge:
+    external: true
+
+volumes:
+  api-db-data:
+  audio-data:
