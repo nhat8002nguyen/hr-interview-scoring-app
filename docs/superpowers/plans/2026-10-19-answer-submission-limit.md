@@ -16,6 +16,8 @@
 - Only a *changed* answer consumes an attempt; byte-identical resubmission stays an idempotent no-op.
 - `attempts_remaining = max(0, max_submissions - version)`, with `version = 0` while unanswered.
 - Exhaustion returns `409 Conflict` as RFC 7807 problem details.
+- HR import bypasses the candidate cap (`max_submissions=None` on the upsert).
+- Audio storage keys include the content hash so a rejected changed upload cannot overwrite the accepted recording.
 - The candidate area must never expose `grading_guide` or any score.
 - No database migration: `answers.version` already provides the counter.
 
@@ -23,11 +25,12 @@
 
 These edge classes are implied by the spec and pinned by tests in the owning task below:
 
-1. Two changed submits racing at the version boundary must not exceed the cap - atomic SQL guard, `test_upsert_guards_against_exceeding_max_submissions` (Task 1).
+1. Two changed submits racing at the version boundary must not exceed the cap - atomic SQL guard, `test_answer_upsert_enforces_submission_limit` (e2e Postgres).
 2. The configured limit lowered below an existing answer's `version` must clamp to `0` and reject further submits - `test_attempts_remaining_clamps_to_zero` (Task 1).
 3. An audio resubmit rejected at the limit must not overwrite the accepted recording - `test_submit_audio_at_limit_does_not_overwrite_accepted_file` (Task 1).
 4. An unanswered question must report the full limit - `test_interview_reports_attempts_remaining` (Task 2).
 5. A byte-identical resubmission must not consume an attempt - `test_unchanged_resubmission_does_not_consume_attempt` (Task 1).
+6. HR import must bypass the candidate cap - `test_import_answer_ignores_candidate_limit` (Task 1).
 
 ---
 
@@ -48,25 +51,14 @@ These edge classes are implied by the spec and pinned by tests in the owning tas
 - Produces:
   - `Settings.max_answer_submissions: int = 3`
   - `AttemptsExhaustedError(question_id: int, max_submissions: int)` in `api.candidates.domain.exceptions`
-  - `build_upsert_statement(answer: Answer, max_submissions: int) -> Insert`
-  - `SqlAlchemyAnswerRepository.upsert(answer: Answer, *, max_submissions: int) -> tuple[Answer, bool]` (and the matching `AnswerRepository` protocol)
+  - `build_upsert_statement(answer: Answer, max_submissions: int | None) -> Insert`
+  - `SqlAlchemyAnswerRepository.upsert(answer: Answer, *, max_submissions: int | None) -> tuple[Answer, bool]` (and the matching `AnswerRepository` protocol)
   - `AnswersService(..., max_submissions: int = 3)`, public attribute `max_submissions: int`, method `attempts_remaining(answer: Answer | None) -> int`
 
-- [ ] **Step 1: Update the SQL test to the new signature and add the atomic-guard test**
+- [ ] **Step 1: Update the SQL test calls to the new signature**
 
-In `apps/backend/tests/test_answer_upsert_sql.py`, change both existing calls to `build_upsert_statement(sample_answer(), max_submissions=3)` and append:
-
-```python
-def test_upsert_guards_against_exceeding_max_submissions() -> None:
-    stmt = build_upsert_statement(sample_answer(), max_submissions=3)
-    sql = str(
-        stmt.compile(
-            dialect=postgresql.dialect(),
-            compile_kwargs={"literal_binds": True},
-        )
-    )
-    assert "answers.version < 3" in sql
-```
+In `apps/backend/tests/test_answer_upsert_sql.py`, change both existing calls to `build_upsert_statement(sample_answer(), max_submissions=3)`.
+Do not add source-string assertions for the version guard; cap and import-bypass behavior are covered by service and e2e Postgres tests.
 
 - [ ] **Step 2: Run the SQL tests to verify they fail**
 
@@ -96,19 +88,20 @@ class AttemptsExhaustedError(Exception):
 In `apps/backend/src/api/candidates/domain/repositories.py` change the `AnswerRepository.upsert` signature to:
 
 ```python
-async def upsert(self, answer: Answer, *, max_submissions: int) -> tuple[Answer, bool]: ...
+async def upsert(self, answer: Answer, *, max_submissions: int | None) -> tuple[Answer, bool]: ...
 ```
 
-In `apps/backend/src/api/candidates/infrastructure/repository.py` import `and_` from `sqlalchemy`, take `max_submissions: int` in `build_upsert_statement`, and replace the `where=` argument with:
+In `apps/backend/src/api/candidates/infrastructure/repository.py` import `and_` from `sqlalchemy`, take `max_submissions: int | None` in `build_upsert_statement`, and build the conflict `WHERE` as:
 
 ```python
-where=and_(
-    AnswerModel.content_hash != statement.excluded.content_hash,
-    AnswerModel.version < max_submissions,
-),
+conditions = [AnswerModel.content_hash != statement.excluded.content_hash]
+if max_submissions is not None:
+    conditions.append(AnswerModel.version < max_submissions)
+# ...
+where=and_(*conditions),
 ```
 
-Change `SqlAlchemyAnswerRepository.upsert` to `async def upsert(self, answer: Answer, *, max_submissions: int)` and pass `max_submissions` through to `build_upsert_statement`.
+Change `SqlAlchemyAnswerRepository.upsert` to `async def upsert(self, answer: Answer, *, max_submissions: int | None)` and pass `max_submissions` through to `build_upsert_statement`.
 
 - [ ] **Step 4: Run the SQL tests to verify they pass**
 
@@ -119,7 +112,8 @@ Expected: PASS.
 
 In `apps/backend/tests/test_candidates_service.py`:
 - Import `AttemptsExhaustedError` from `api.candidates.domain.exceptions`.
-- Change `FakeAnswerRepository.upsert` to `async def upsert(self, answer: Answer, *, max_submissions: int)`. In the changed-content branch, raise `AttemptsExhaustedError(answer.question_id, max_submissions)` when `existing.version >= max_submissions`; otherwise behave as today.
+- Change `FakeAnswerRepository.upsert` to `async def upsert(self, answer: Answer, *, max_submissions: int | None)`.
+  In the changed-content branch, raise `AttemptsExhaustedError(answer.question_id, max_submissions)` when `max_submissions is not None` and `existing.version >= max_submissions`; otherwise behave as today.
 - Add `max_submissions: int = 3` to `_answers_service` and pass it to `AnswersService(..., max_submissions=max_submissions)`.
 
 Append these tests:
@@ -239,18 +233,24 @@ async def _submit(self, answer: Answer, *, status: str) -> SubmitResult:
     raise AttemptsExhaustedError(answer.question_id, self.max_submissions)
 ```
 
-- In `submit_audio`, after computing `content_hash` and before `self._file_storage.save`, read the active answer and short-circuit:
+- In `submit_audio`, after computing `content_hash` and before `self._file_storage.save`, read the active answer and reject only at-cap *changed* uploads.
+  Do not early-return on an identical hash; always save under a content-hash key and run `_submit` so unchanged responses come from the post-upsert row:
 
 ```python
 async with self._uow_factory() as uow:
     active = await uow.answers.get_active(candidate_id, question_id)
-if active is not None and active.content_hash == content_hash:
-    return SubmitResult(status="received", unchanged=True, answer=active)
-if active is not None and active.version >= self.max_submissions:
+if (
+    active is not None
+    and active.version >= self.max_submissions
+    and active.content_hash != content_hash
+):
     raise AttemptsExhaustedError(question_id, self.max_submissions)
+ext = Path(filename).suffix or ".m4a"
+key = f"audio/{candidate_id}/{question_id}/{content_hash}{ext}"
+await self._file_storage.save(key, data)
 ```
 
-- In `import_answer`, pass `max_submissions=self.max_submissions` to `uow.answers.upsert`.
+- In `import_answer`, pass `max_submissions=None` to `uow.answers.upsert` so HR import bypasses the candidate cap.
 
 In `apps/backend/src/api/main.py`, pass `max_submissions=configured.max_answer_submissions` to the `AnswersService(...)` construction.
 

@@ -36,6 +36,8 @@ Out of scope:
 | What counts as an attempt | Only a *changed* answer consumes an attempt. Byte-identical resubmission remains an idempotent no-op. |
 | Counter storage | Reuse the existing `answers.version` column. No new table, no new column, no migration. |
 | Exhaustion response | `409 Conflict` RFC 7807 problem detail. |
+| HR import | Bypasses the candidate cap (`import_answer` upserts with `max_submissions=None`). |
+| Audio storage keys | Include the content hash so a rejected changed upload cannot overwrite the accepted recording. |
 | Exposed fields | `attempts_remaining` on each interview question and on the submit response; `max_submissions` once at the interview-response top level. |
 
 ## 4. Design
@@ -77,16 +79,17 @@ It is exposed as a public `max_submissions` attribute for the presentation layer
 
 ### 4.4 Enforcement
 
-**Repository.** `build_upsert_statement(answer, max_submissions)` adds a second condition to the `ON CONFLICT ... DO UPDATE` `WHERE`:
+**Repository.** `build_upsert_statement(answer, max_submissions)` always requires a content-hash change to update.
+When `max_submissions` is an int, it also requires `version < max_submissions`.
+When `max_submissions` is `None` (HR import), the version guard is omitted so import can exceed the candidate cap.
 
 ```python
-and_(
-    AnswerModel.content_hash != statement.excluded.content_hash,
-    AnswerModel.version < max_submissions,
-)
+conditions = [AnswerModel.content_hash != statement.excluded.content_hash]
+if max_submissions is not None:
+    conditions.append(AnswerModel.version < max_submissions)
 ```
 
-This makes the limit atomic: under concurrent submits, `version` can never exceed the maximum even when two requests race at the boundary.
+This makes the candidate limit atomic: under concurrent submits, `version` can never exceed the maximum even when two requests race at the boundary.
 
 **Service.** `AnswersService._submit` runs the upsert, then reads the resulting active row and disambiguates three outcomes:
 
@@ -94,7 +97,9 @@ This makes the limit atomic: under concurrent submits, `version` can never excee
 - content changed and written -> return `unchanged=False`, reset the scoring job.
 - content changed but not written -> raise `AttemptsExhaustedError` (the write was blocked because `version` hit the maximum).
 
-`submit_audio` computes the hash and checks the limit *before* saving the file, so a rejected upload cannot overwrite the already-accepted recording.
+`submit_audio` always saves under a content-hash key (`audio/{candidate_id}/{question_id}/{content_hash}{ext}`) and always runs the upsert, so an identical resubmit is a real unchanged no-op from the post-upsert row.
+It pre-rejects only when the active row is already at the cap *and* the upload hash differs, so a rejected changed upload never writes a new object that could replace the accepted recording path.
+`import_answer` calls upsert with `max_submissions=None` so HR data-pack import bypasses the candidate cap.
 
 A new `AttemptsExhaustedError(question_id, max_submissions)` is added to `candidates/domain/exceptions.py` and mapped to `409` in `candidates/presentation/errors.py`.
 
@@ -173,4 +178,6 @@ Frontend:
 | Candidate sees attempts remaining | `attempts_remaining` on each interview question and on the submit response. |
 | Candidate can resubmit until exhausted | Submissions are accepted while `version < max_submissions`. |
 | Accidental identical resubmit does not penalize | Byte-identical content is still an idempotent no-op and does not consume an attempt. |
+| HR import bypasses the candidate cap | `import_answer` upserts with `max_submissions=None`, omitting the version guard. |
+| Rejected audio cannot overwrite accepted audio | Audio keys include the content hash; at-cap changed uploads are rejected before save. |
 | No HR data leaks to candidates | No score or grading-guide fields are added to the candidate area. |

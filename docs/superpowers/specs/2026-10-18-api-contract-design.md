@@ -468,6 +468,7 @@ Response `200` (updated answer shape). `override_reason` is required (non-empty)
 5. Return the summary above.
 
 Import is idempotent on `external_ref`: re-importing the same pack does not duplicate questions, candidates, or answers.
+HR import bypasses the candidate submission cap: answer upserts run with no `version < max_submissions` guard (`max_submissions=None`), so a pack can load or replace answers even when `version` already meets `MAX_ANSWER_SUBMISSIONS`.
 
 ## 9. Errors
 

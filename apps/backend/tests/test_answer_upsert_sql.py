@@ -33,20 +33,3 @@ def test_upsert_updates_answer_type() -> None:
     stmt = build_upsert_statement(sample_answer(), max_submissions=3)
     sql = str(stmt.compile(dialect=postgresql.dialect()))
     assert "DO UPDATE SET answer_type = " in sql
-
-
-def test_upsert_guards_against_exceeding_max_submissions() -> None:
-    stmt = build_upsert_statement(sample_answer(), max_submissions=3)
-    sql = str(
-        stmt.compile(
-            dialect=postgresql.dialect(),
-            compile_kwargs={"literal_binds": True},
-        )
-    )
-    assert "answers.version < 3" in sql
-
-
-def test_upsert_without_limit_omits_version_guard() -> None:
-    stmt = build_upsert_statement(sample_answer(), max_submissions=None)
-    sql = str(stmt.compile(dialect=postgresql.dialect()))
-    assert "answers.version <" not in sql
