@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from hashlib import sha256
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from api.candidates.application.service import AnswersService, CandidatesService
 from api.candidates.domain.entities import Answer, Candidate
@@ -14,12 +15,24 @@ from api.catalog.domain.entities import Question
 from api.catalog.domain.exceptions import QuestionNotFoundError
 
 
+class _UniqueViolation(Exception):
+    pgcode = "23505"
+
+
 class FakeCandidateRepository:
-    def __init__(self, candidates: list[Candidate] | None = None) -> None:
+    def __init__(
+        self,
+        candidates: list[Candidate] | None = None,
+        *,
+        fail_add_with_unique: bool = False,
+    ) -> None:
         self._candidates = {candidate.id: candidate for candidate in candidates or []}
         self._next_id = max(self._candidates, default=0) + 1
+        self._fail_add_with_unique = fail_add_with_unique
 
     async def add(self, candidate: Candidate) -> Candidate:
+        if self._fail_add_with_unique:
+            raise IntegrityError("INSERT", {}, _UniqueViolation())
         stored = Candidate(
             id=self._next_id,
             name=candidate.name,
@@ -272,6 +285,22 @@ async def test_candidate_email_is_unique_per_owner_not_globally() -> None:
         await service.create_candidate(
             name="Ada",
             email="ada@example.com",
+            role_id=2,
+            owner_id=1,
+        )
+
+
+async def test_create_candidate_unique_violation_on_add_maps_to_conflict() -> None:
+    candidates = FakeCandidateRepository(fail_add_with_unique=True)
+    service = CandidatesService(
+        lambda: FakeCandidatesUnitOfWork(candidates, FakeAnswerRepository()),
+        lambda: "token-race",
+    )
+
+    with pytest.raises(CandidateAlreadyExistsError):
+        await service.create_candidate(
+            name="Ada",
+            email="race@example.com",
             role_id=2,
             owner_id=1,
         )

@@ -281,7 +281,7 @@ class ImportService:
             elif transcript is None and audio_file and record.audio_bytes is not None:
                 if await self._answers.get_by_external_ref(candidate.id, answer_id) is not None:
                     continue
-                key = f"audio/import/{answer_id}.m4a"
+                key = f"audio/import/{candidate.id}/{answer_id}.m4a"
                 await self._file_storage.save(key, record.audio_bytes)
                 _, changed = await self._answers.import_answer(
                     candidate.id,

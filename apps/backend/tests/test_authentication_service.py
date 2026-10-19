@@ -1,4 +1,5 @@
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from api.auth.application.service import AuthenticationService, AuthTokens
 from api.auth.domain.entities import User
@@ -10,19 +11,27 @@ EMAIL = "hr@talotrace.ai"
 PASSWORD = "correct-horse-battery-staple"
 
 
+class _UniqueViolation(Exception):
+    pgcode = "23505"
+
+
 class FakeUserRepository:
     def __init__(
         self,
         *,
         by_email: dict[str, User] | None = None,
         by_id: dict[int, User] | None = None,
+        fail_add_with_unique: bool = False,
     ) -> None:
         self._by_email = by_email or {}
         self._by_id = (
             by_id if by_id is not None else {user.id: user for user in self._by_email.values()}
         )
+        self._fail_add_with_unique = fail_add_with_unique
 
     async def add(self, user: User) -> User:
+        if self._fail_add_with_unique:
+            raise IntegrityError("INSERT", {}, _UniqueViolation())
         self._by_email[user.email] = user
         self._by_id[user.id] = user
         return user
@@ -209,6 +218,18 @@ async def test_sign_up_duplicate_email_raises() -> None:
 
     with pytest.raises(EmailAlreadyExistsError):
         await service.sign_up("new@example.com", "password123")
+
+
+async def test_sign_up_unique_violation_on_add_maps_to_conflict() -> None:
+    service = AuthenticationService(
+        users=FakeUserRepository(fail_add_with_unique=True),
+        hashing=FakeHashingService(),
+        jwt=_jwt(),
+        refresh_tokens=FakeRefreshTokenStorage(),
+    )
+
+    with pytest.raises(EmailAlreadyExistsError):
+        await service.sign_up("race@example.com", "password123")
 
 
 async def test_sign_up_short_password_raises() -> None:

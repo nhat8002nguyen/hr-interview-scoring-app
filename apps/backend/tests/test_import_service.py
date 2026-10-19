@@ -350,11 +350,12 @@ async def test_import_audio_is_needs_a_person() -> None:
     assert created.role_id == sales_role.id
 
     imported = answers.answers["A034"]
+    expected_key = f"audio/import/{created.id}/A034.m4a"
     assert imported.answer_type == "audio"
     assert imported.text is None
-    assert imported.audio_key == "audio/import/A034.m4a"
+    assert imported.audio_key == expected_key
     assert imported.content_hash == sha256(A034_AUDIO).hexdigest()
-    assert file_storage.files["audio/import/A034.m4a"] == A034_AUDIO
+    assert file_storage.files[expected_key] == A034_AUDIO
 
 
 async def test_import_is_idempotent_on_external_ref() -> None:
@@ -379,11 +380,14 @@ async def test_import_is_idempotent_on_external_ref() -> None:
     assert len(catalog.roles) == 5
     assert len(candidates.candidates) == 2
     assert len(answers.answers) == 2
-    assert file_storage.save_calls.count("audio/import/A034.m4a") == 1
+    audio_candidate = await candidates.get_by_external_ref(1, "C2057")
+    assert audio_candidate is not None
+    expected_key = f"audio/import/{audio_candidate.id}/A034.m4a"
+    assert file_storage.save_calls.count(expected_key) == 1
 
 
 async def test_import_same_pack_two_owners_isolated() -> None:
-    service, _, candidates, answers, _ = _service()
+    service, _, candidates, answers, file_storage = _service()
 
     first = await service.import_zip(_pack(include_answers=True), owner_id=1)
     second = await service.import_zip(_pack(include_answers=True), owner_id=2)
@@ -403,6 +407,54 @@ async def test_import_same_pack_two_owners_isolated() -> None:
     answer_two = await answers.get_by_external_ref(owner_two.id, "A001")
     assert answer_one is not None and answer_one.candidate_id == owner_one.id
     assert answer_two is not None and answer_two.candidate_id == owner_two.id
+
+    audio_one_candidate = await candidates.get_by_external_ref(1, "C2057")
+    audio_two_candidate = await candidates.get_by_external_ref(2, "C2057")
+    assert audio_one_candidate is not None and audio_two_candidate is not None
+    assert audio_one_candidate.id != audio_two_candidate.id
+
+    audio_one = await answers.get_by_external_ref(audio_one_candidate.id, "A034")
+    audio_two = await answers.get_by_external_ref(audio_two_candidate.id, "A034")
+    assert audio_one is not None and audio_two is not None
+    key_one = f"audio/import/{audio_one_candidate.id}/A034.m4a"
+    key_two = f"audio/import/{audio_two_candidate.id}/A034.m4a"
+    assert audio_one.audio_key == key_one
+    assert audio_two.audio_key == key_two
+    assert key_one != key_two
+    assert file_storage.files[key_one] == A034_AUDIO
+    assert file_storage.files[key_two] == A034_AUDIO
+
+
+async def test_import_audio_different_bytes_do_not_overwrite_across_owners() -> None:
+    service, _, candidates, answers, file_storage = _service()
+    other_audio = b"\xff\xfeother-owner-audio"
+
+    await service.import_zip(_pack(include_answers=True), owner_id=1)
+
+    other_pack = _zip_bytes(
+        {
+            "questions.md": QUESTIONS_MD.encode("utf-8"),
+            "pipeline_log.csv": PIPELINE_CSV.encode("utf-8"),
+            "answers/A034.json": A034_JSON.encode("utf-8"),
+            "answers/A034.m4a": other_audio,
+        }
+    )
+    await service.import_zip(other_pack, owner_id=2)
+
+    candidate_one = await candidates.get_by_external_ref(1, "C2057")
+    candidate_two = await candidates.get_by_external_ref(2, "C2057")
+    assert candidate_one is not None and candidate_two is not None
+
+    answer_one = await answers.get_by_external_ref(candidate_one.id, "A034")
+    answer_two = await answers.get_by_external_ref(candidate_two.id, "A034")
+    assert answer_one is not None and answer_two is not None
+
+    key_one = f"audio/import/{candidate_one.id}/A034.m4a"
+    key_two = f"audio/import/{candidate_two.id}/A034.m4a"
+    assert answer_one.audio_key == key_one
+    assert answer_two.audio_key == key_two
+    assert file_storage.files[key_one] == A034_AUDIO
+    assert file_storage.files[key_two] == other_audio
 
 
 def _retake_pack() -> bytes:

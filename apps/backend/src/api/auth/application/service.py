@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from uuid import uuid4
 
+from sqlalchemy.exc import IntegrityError
+
 from api.auth.domain.entities import User
 from api.auth.domain.exceptions import EmailAlreadyExistsError, UserNotFoundError, WeakPasswordError
 from api.auth.domain.repositories import UserRepository
@@ -12,6 +14,16 @@ from iam import (
     Role,
     UnauthorizedError,
 )
+
+_UNIQUE_VIOLATION = "23505"
+
+
+def _is_unique_violation(exc: IntegrityError) -> bool:
+    orig = exc.orig
+    if orig is None:
+        return False
+    code = getattr(orig, "pgcode", None) or getattr(orig, "sqlstate", None)
+    return code == _UNIQUE_VIOLATION
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,9 +60,14 @@ class AuthenticationService:
         if await self._users.get_by_email(email) is not None:
             raise EmailAlreadyExistsError(email)
         password_hash = await self._hashing.hash(password)
-        user = await self._users.add(
-            User(id=0, email=email, password_hash=password_hash, role=Role.HR)
-        )
+        try:
+            user = await self._users.add(
+                User(id=0, email=email, password_hash=password_hash, role=Role.HR)
+            )
+        except IntegrityError as exc:
+            if not _is_unique_violation(exc):
+                raise
+            raise EmailAlreadyExistsError(email) from None
         return await self._issue_tokens(user)
 
     async def refresh(self, refresh_token: str) -> AuthTokens:

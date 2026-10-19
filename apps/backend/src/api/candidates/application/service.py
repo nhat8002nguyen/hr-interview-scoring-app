@@ -5,6 +5,8 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Literal
 
+from sqlalchemy.exc import IntegrityError
+
 from api.candidates.application.ports import (
     CandidatesUnitOfWorkFactory,
     FileStorage,
@@ -19,6 +21,16 @@ from api.candidates.domain.exceptions import (
     CandidateNotFoundError,
 )
 from api.catalog.application.service import CatalogService
+
+_UNIQUE_VIOLATION = "23505"
+
+
+def _is_unique_violation(exc: IntegrityError) -> bool:
+    orig = exc.orig
+    if orig is None:
+        return False
+    code = getattr(orig, "pgcode", None) or getattr(orig, "sqlstate", None)
+    return code == _UNIQUE_VIOLATION
 
 
 def _default_token_generator() -> str:
@@ -75,7 +87,12 @@ class CandidatesService:
                 external_ref=external_ref,
                 created_at=datetime.now(UTC),
             )
-            return await uow.candidates.add(candidate)
+            try:
+                return await uow.candidates.add(candidate)
+            except IntegrityError as exc:
+                if not _is_unique_violation(exc):
+                    raise
+                raise CandidateAlreadyExistsError(email) from None
 
     async def get_by_session_token(self, token: str) -> Candidate | None:
         async with self._uow_factory() as uow:
