@@ -171,6 +171,7 @@ class FakeCandidatesService:
         name: str,
         email: str,
         role_id: int,
+        owner_id: int,
         external_ref: str | None = None,
     ) -> Candidate:
         candidate = Candidate(
@@ -178,6 +179,7 @@ class FakeCandidatesService:
             name=name,
             email=email,
             role_id=role_id,
+            owner_id=owner_id,
             session_token="generated-token",
             external_ref=external_ref,
             created_at=datetime.now(UTC),
@@ -275,7 +277,7 @@ def _service() -> tuple[
 async def test_import_parses_questions_and_roles() -> None:
     service, catalog, _, _, _ = _service()
 
-    summary = await service.import_zip(_pack(include_answers=False))
+    summary = await service.import_zip(_pack(include_answers=False), owner_id=1)
 
     assert summary.questions_created == 6
     assert summary.roles_created == 5
@@ -307,7 +309,7 @@ async def test_import_parses_questions_and_roles() -> None:
 async def test_import_creates_text_candidates_and_answers() -> None:
     service, catalog, candidates, answers, _ = _service()
 
-    summary = await service.import_zip(_pack(include_answers=True))
+    summary = await service.import_zip(_pack(include_answers=True), owner_id=1)
 
     assert summary.candidates_created == 2
     assert summary.answers_imported == 2
@@ -331,7 +333,7 @@ async def test_import_creates_text_candidates_and_answers() -> None:
 async def test_import_audio_is_needs_a_person() -> None:
     service, catalog, candidates, answers, file_storage = _service()
 
-    summary = await service.import_zip(_pack(include_answers=True))
+    summary = await service.import_zip(_pack(include_answers=True), owner_id=1)
 
     assert summary.audio_answers_needing_person == 1
     assert summary.scoring_jobs_queued == 1
@@ -353,8 +355,8 @@ async def test_import_audio_is_needs_a_person() -> None:
 async def test_import_is_idempotent_on_external_ref() -> None:
     service, catalog, candidates, answers, file_storage = _service()
 
-    first = await service.import_zip(_pack())
-    second = await service.import_zip(_pack())
+    first = await service.import_zip(_pack(), owner_id=1)
+    second = await service.import_zip(_pack(), owner_id=1)
 
     assert first.roles_created == 5
     assert first.questions_created == 6
@@ -406,8 +408,8 @@ def _retake_pack() -> bytes:
 async def test_reimport_does_not_overcount_merged_retake() -> None:
     service, _, _, answers, _ = _service()
 
-    first = await service.import_zip(_retake_pack())
-    second = await service.import_zip(_retake_pack())
+    first = await service.import_zip(_retake_pack(), owner_id=1)
+    second = await service.import_zip(_retake_pack(), owner_id=1)
 
     assert first.answers_imported == 2
     assert first.scoring_jobs_queued == 2
@@ -423,7 +425,7 @@ async def test_import_unreadable_zip_raises() -> None:
     service, _, _, _, _ = _service()
 
     with pytest.raises(InvalidImportError):
-        await service.import_zip(b"this is not a zip archive")
+        await service.import_zip(b"this is not a zip archive", owner_id=1)
 
 
 @pytest.mark.parametrize(
@@ -456,7 +458,7 @@ async def test_import_malformed_answer_raises(answer_payload: dict[str, object])
     }
 
     with pytest.raises(InvalidImportError):
-        await service.import_zip(_zip_bytes(files))
+        await service.import_zip(_zip_bytes(files), owner_id=1)
 
 
 async def test_import_empty_transcript_is_text_answer() -> None:
@@ -476,7 +478,7 @@ async def test_import_empty_transcript_is_text_answer() -> None:
         ).encode("utf-8"),
     }
 
-    summary = await service.import_zip(_zip_bytes(files))
+    summary = await service.import_zip(_zip_bytes(files), owner_id=1)
 
     assert summary.answers_imported == 1
     assert summary.scoring_jobs_queued == 1

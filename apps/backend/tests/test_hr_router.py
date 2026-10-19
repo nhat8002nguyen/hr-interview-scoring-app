@@ -57,6 +57,7 @@ class FakeCandidatesService:
         name: str,
         email: str,
         role_id: int,
+        owner_id: int,
         external_ref: str | None = None,
     ) -> Candidate:
         if any(c.email == email for c in self._candidates.values()):
@@ -68,6 +69,7 @@ class FakeCandidatesService:
             name=name,
             email=email,
             role_id=role_id,
+            owner_id=owner_id,
             session_token="generated-token",
             external_ref=external_ref,
             created_at=datetime.now(UTC),
@@ -130,6 +132,7 @@ def _candidate(candidate_id: int, name: str, token: str, *, role_id: int = 1) ->
         name=name,
         email=f"candidate{candidate_id}@example.com",
         role_id=role_id,
+        owner_id=1,
         session_token=token,
         external_ref=None,
         created_at=SUBMITTED_AT,

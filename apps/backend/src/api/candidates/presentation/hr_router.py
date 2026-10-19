@@ -22,7 +22,7 @@ from api.candidates.presentation.schemas import (
     ScoringSummary,
 )
 from api.config import Settings
-from iam import AuthType, Role, require_auth, require_roles
+from iam import AuthType, CurrentUserDep, Role, require_auth, require_roles
 
 hr_router = APIRouter(prefix="/hr", tags=["hr"])
 
@@ -176,6 +176,7 @@ async def get_candidate_detail(
 )
 async def create_candidate(
     body: CreateCandidateBody,
+    user: CurrentUserDep,
     candidates: CandidatesServiceDep,
     settings: SettingsDep,
 ) -> CreateCandidateResponse:
@@ -183,6 +184,7 @@ async def create_candidate(
         name=body.name,
         email=body.email,
         role_id=body.role_id,
+        owner_id=user.sub,
     )
     return CreateCandidateResponse(
         id=candidate.id,

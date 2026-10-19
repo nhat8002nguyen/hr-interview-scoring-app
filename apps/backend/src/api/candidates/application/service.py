@@ -58,6 +58,7 @@ class CandidatesService:
         name: str,
         email: str,
         role_id: int,
+        owner_id: int,
         external_ref: str | None = None,
     ) -> Candidate:
         async with self._uow_factory() as uow:
@@ -69,6 +70,7 @@ class CandidatesService:
                 name=name,
                 email=email,
                 role_id=role_id,
+                owner_id=owner_id,
                 session_token=self._token_generator(),
                 external_ref=external_ref,
                 created_at=datetime.now(UTC),

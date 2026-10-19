@@ -200,7 +200,7 @@ class ImportService:
         self._answers = answers
         self._file_storage = file_storage
 
-    async def import_zip(self, data: bytes) -> ImportSummary:
+    async def import_zip(self, data: bytes, owner_id: int) -> ImportSummary:
         questions_md, pipeline_csv, records = _read_pack(data)
 
         question_specs, open_roles = _parse_questions(questions_md)
@@ -255,6 +255,7 @@ class ImportService:
                     payload,
                     pipeline,
                     role_by_name,
+                    owner_id,
                 )
                 candidates_created += 1
 
@@ -311,6 +312,7 @@ class ImportService:
         payload: dict[str, object],
         pipeline: dict[str, tuple[str, str, str]],
         role_by_name: dict[str, Role],
+        owner_id: int,
     ) -> Candidate:
         pipeline_row = pipeline.get(candidate_ref)
         if pipeline_row is not None:
@@ -329,5 +331,6 @@ class ImportService:
             name=name,
             email=email,
             role_id=role.id,
+            owner_id=owner_id,
             external_ref=candidate_ref,
         )

@@ -28,6 +28,7 @@ import api.auth.infrastructure.models  # noqa: F401 - register UserModel, Refres
 import api.candidates.infrastructure.models  # noqa: F401 - register CandidateModel, AnswerModel
 import api.catalog.infrastructure.models  # noqa: F401 - register RoleModel, QuestionModel
 import api.scoring.infrastructure.models  # noqa: F401 - register ScoringJobModel
+from api.auth.infrastructure.models import UserModel
 from api.candidates.application.service import AnswersService, CandidatesService
 from api.candidates.domain.entities import Answer
 from api.candidates.infrastructure.models import AnswerModel, CandidateModel
@@ -210,6 +211,13 @@ async def test_import_and_score_end_to_end(
             await connection.run_sync(Base.metadata.create_all)
         session_factory = create_session_factory(engine)
 
+        async with session_factory() as session:
+            user = UserModel(email="hr@example.com", password_hash="x", role="hr")
+            session.add(user)
+            await session.flush()
+            owner_id = user.id
+            await session.commit()
+
         candidates = CandidatesService(
             lambda: CandidatesUnitOfWork(session_factory),
             token_generator=lambda: secrets.token_urlsafe(32),
@@ -228,7 +236,7 @@ async def test_import_and_score_end_to_end(
         )
         importing = ImportService(catalog, candidates, answers, file_storage)
 
-        summary = await importing.import_zip(_build_pack_zip())
+        summary = await importing.import_zip(_build_pack_zip(), owner_id=owner_id)
         assert summary.roles_created == 5
         assert summary.questions_created == 6
         assert summary.candidates_created == 18
@@ -240,7 +248,7 @@ async def test_import_and_score_end_to_end(
         # (C2052 answered Q3 twice: A022 then A023). The surviving row keeps
         # A022's external_ref, so A023 is re-processed but unchanged and must
         # not be reported as newly imported or re-queued.
-        second = await importing.import_zip(_build_pack_zip())
+        second = await importing.import_zip(_build_pack_zip(), owner_id=owner_id)
         assert second.roles_created == 0
         assert second.questions_created == 0
         assert second.candidates_created == 0
@@ -326,10 +334,14 @@ async def test_answer_upsert_enforces_submission_limit(
             )
             session.add(question)
             await session.flush()
+            user = UserModel(email="hr@example.com", password_hash="x", role="hr")
+            session.add(user)
+            await session.flush()
             candidate = CandidateModel(
                 name="Ada",
                 email="ada@example.com",
                 role_id=role.id,
+                owner_id=user.id,
                 session_token="token-1",
             )
             session.add(candidate)
@@ -428,10 +440,14 @@ async def test_claim_is_exclusive(
             )
             session.add(question)
             await session.flush()
+            user = UserModel(email="hr@example.com", password_hash="x", role="hr")
+            session.add(user)
+            await session.flush()
             candidate = CandidateModel(
                 name="Ada",
                 email="ada@example.com",
                 role_id=role.id,
+                owner_id=user.id,
                 session_token="token-1",
             )
             session.add(candidate)

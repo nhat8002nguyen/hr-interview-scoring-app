@@ -25,6 +25,7 @@ class FakeCandidateRepository:
             name=candidate.name,
             email=candidate.email,
             role_id=candidate.role_id,
+            owner_id=candidate.owner_id,
             session_token=candidate.session_token,
             external_ref=candidate.external_ref,
             created_at=candidate.created_at,
@@ -207,6 +208,7 @@ async def test_create_candidate_generates_token_and_conflicts_on_email() -> None
         name="Ada",
         email="ada@example.com",
         role_id=2,
+        owner_id=1,
     )
 
     assert created.session_token == "token-1"
@@ -217,6 +219,7 @@ async def test_create_candidate_generates_token_and_conflicts_on_email() -> None
             name="Ada",
             email="ada@example.com",
             role_id=2,
+            owner_id=1,
         )
 
 
