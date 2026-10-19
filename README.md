@@ -18,6 +18,17 @@ Each application is self-contained inside its own folder under `apps/`.
 
 Production deploy details and host bootstrap live in [`deploy/README.md`](./deploy/README.md).
 
+## Demo access
+
+Use these links and the shared HR account to review the product.
+
+- Candidate app: https://talot-candidate-web.vercel.app
+- HR app: https://talot-hr-web.vercel.app
+- HR sign-in: `hr@talotrace.ai` / `4uuXKGhi24zDU4MShW8dpJRK`
+
+Open the HR app link and sign in with the credentials above.
+The candidate app link is for the interview flow.
+
 ## Local full stack
 
 Start Postgres, migrations, the backend, and both web apps from the repository root:
