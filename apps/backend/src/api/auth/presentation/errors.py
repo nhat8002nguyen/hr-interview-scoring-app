@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 
 from api.auth.domain.exceptions import (
     EmailAlreadyExistsError,
+    RateLimitExceededError,
     UserNotFoundError,
     WeakPasswordError,
 )
@@ -20,6 +21,10 @@ def register_authentication_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(WeakPasswordError)
     async def weak_password(_: Request, exc: WeakPasswordError) -> JSONResponse:
         return _problem(422, "Unprocessable Entity", str(exc))
+
+    @app.exception_handler(RateLimitExceededError)
+    async def rate_limit_exceeded(_: Request, exc: RateLimitExceededError) -> JSONResponse:
+        return _problem(429, "Too Many Requests", str(exc))
 
 
 def _problem(status: int, title: str, detail: str) -> JSONResponse:

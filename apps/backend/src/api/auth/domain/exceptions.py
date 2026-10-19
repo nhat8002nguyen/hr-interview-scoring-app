@@ -14,3 +14,8 @@ class WeakPasswordError(Exception):
     def __init__(self, min_length: int) -> None:
         super().__init__(f"Password must be at least {min_length} characters long")
         self.min_length = min_length
+
+
+class RateLimitExceededError(Exception):
+    def __init__(self) -> None:
+        super().__init__("Too many requests")

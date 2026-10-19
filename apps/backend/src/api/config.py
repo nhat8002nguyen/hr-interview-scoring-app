@@ -24,6 +24,8 @@ class Settings(JwtSettings):
     seed_hr_email: str = "hr@talotrace.ai"
     seed_hr_password: str = "change-me"
     password_min_length: int = 8
+    auth_rate_limit: int = 60
+    auth_rate_limit_window_seconds: float = 60.0
 
     @field_validator("cors_origins", mode="before")
     @classmethod

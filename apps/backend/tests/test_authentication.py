@@ -9,6 +9,7 @@ from api.auth.domain.exceptions import EmailAlreadyExistsError
 from api.auth.infrastructure.models import UserModel
 from api.auth.presentation.errors import register_authentication_exception_handlers
 from api.auth.presentation.router import auth_router
+from api.config import Settings
 from database import Base, create_engine, create_session_factory
 from iam import Role, UnauthorizedError, register_iam_exception_handlers
 
@@ -64,6 +65,7 @@ class FakeAuthenticationService:
 def _app(service: FakeAuthenticationService) -> FastAPI:
     app = FastAPI()
     app.state.authentication_service = service
+    app.state.settings = Settings()
     register_iam_exception_handlers(app)
     register_authentication_exception_handlers(app)
     app.include_router(auth_router)
