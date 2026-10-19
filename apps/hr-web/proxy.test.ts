@@ -19,8 +19,8 @@ describe("proxy", () => {
     expect(res.headers.get("location")).toBeNull();
   });
 
-  it("leaves /sign-in and /api unguarded", () => {
-    for (const path of ["/sign-in", "/api/hr/roles"]) {
+  it("leaves /sign-in, /sign-up and /api unguarded", () => {
+    for (const path of ["/sign-in", "/sign-up", "/api/hr/roles"]) {
       const res = proxy(request(path));
       expect(res.status).toBe(200);
       expect(res.headers.get("location")).toBeNull();

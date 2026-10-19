@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { clientFetch } from "@/lib/api/client";
 import { Button, Card } from "@/lib/components/ui";
@@ -64,6 +65,12 @@ export default function SignInPage() {
             {submitting ? "Signing in..." : "Sign in"}
           </Button>
         </form>
+        <p className="mt-4 text-center text-sm text-slate-600">
+          No account yet?{" "}
+          <Link href="/sign-up" className="font-medium text-slate-900 hover:underline">
+            Create an account
+          </Link>
+        </p>
       </Card>
     </main>
   );
