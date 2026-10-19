@@ -1,6 +1,6 @@
 from typing import Any, cast
 
-from sqlalchemy import Insert, func, literal_column, select
+from sqlalchemy import Insert, and_, func, literal_column, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +9,7 @@ from api.candidates.domain.entities import Answer, Candidate
 from api.candidates.infrastructure.models import AnswerModel, CandidateModel
 
 
-def build_upsert_statement(answer: Answer) -> Insert:
+def build_upsert_statement(answer: Answer, max_submissions: int) -> Insert:
     statement = insert(AnswerModel).values(
         candidate_id=answer.candidate_id,
         question_id=answer.question_id,
@@ -31,7 +31,10 @@ def build_upsert_statement(answer: Answer) -> Insert:
             "version": literal_column("answers.version + 1"),
             "submitted_at": answer.submitted_at,
         },
-        where=AnswerModel.content_hash != statement.excluded.content_hash,
+        where=and_(
+            AnswerModel.content_hash != statement.excluded.content_hash,
+            AnswerModel.version < max_submissions,
+        ),
     )
 
 
@@ -112,8 +115,10 @@ class SqlAlchemyAnswerRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def upsert(self, answer: Answer) -> tuple[Answer, bool]:
-        result = await self._session.execute(build_upsert_statement(answer))
+    async def upsert(self, answer: Answer, *, max_submissions: int) -> tuple[Answer, bool]:
+        result = await self._session.execute(
+            build_upsert_statement(answer, max_submissions=max_submissions)
+        )
         changed = cast(CursorResult[Any], result).rowcount > 0
         row = await self._get_active_row(answer.candidate_id, answer.question_id)
         assert row is not None, "upsert must always produce an active answer row"

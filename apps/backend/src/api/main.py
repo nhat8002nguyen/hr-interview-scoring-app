@@ -74,6 +74,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             catalog,
             scoring,
             file_storage,
+            max_submissions=configured.max_answer_submissions,
         )
         importing = ImportService(catalog, candidates, answers, file_storage)
         scoring_reader = ScoringServiceReader(scoring)

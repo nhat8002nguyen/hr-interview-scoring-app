@@ -4,7 +4,10 @@ import pytest
 
 from api.candidates.application.service import AnswersService, CandidatesService
 from api.candidates.domain.entities import Answer, Candidate
-from api.candidates.domain.exceptions import CandidateAlreadyExistsError
+from api.candidates.domain.exceptions import (
+    AttemptsExhaustedError,
+    CandidateAlreadyExistsError,
+)
 from api.candidates.infrastructure.storage import LocalFileStorage
 from api.catalog.domain.entities import Question
 from api.catalog.domain.exceptions import QuestionNotFoundError
@@ -61,10 +64,14 @@ class FakeAnswerRepository:
         }
         self._next_id = max((answer.id for answer in self._answers.values()), default=0) + 1
 
-    async def upsert(self, answer: Answer) -> tuple[Answer, bool]:
+    async def upsert(
+        self, answer: Answer, *, max_submissions: int
+    ) -> tuple[Answer, bool]:
         key = (answer.candidate_id, answer.question_id)
         existing = self._answers.get(key)
         changed = existing is None or existing.content_hash != answer.content_hash
+        if existing is not None and changed and existing.version >= max_submissions:
+            raise AttemptsExhaustedError(answer.question_id, max_submissions)
         if existing is None:
             stored = Answer(
                 id=self._next_id,
@@ -163,6 +170,7 @@ def _answers_service(
     *,
     question_ids: set[int] | None = None,
     answers: list[Answer] | None = None,
+    max_submissions: int = 3,
 ) -> tuple[AnswersService, FakeAnswerRepository, FakeScoringJobPort, LocalFileStorage]:
     candidates = FakeCandidateRepository()
     answers_repo = FakeAnswerRepository(answers)
@@ -174,6 +182,7 @@ def _answers_service(
         questions,
         scoring_jobs,
         file_storage,
+        max_submissions=max_submissions,
     )
     return service, answers_repo, scoring_jobs, file_storage
 
@@ -272,3 +281,83 @@ async def test_read_audio_returns_bytes_and_type(tmp_path) -> None:
 
     assert data == b"\x01\x02"
     assert media_type == "audio/mp4"
+
+
+async def test_third_submit_is_accepted_and_fourth_changed_submit_is_rejected(tmp_path) -> None:
+    service, _, _, _ = _answers_service(tmp_path, question_ids={7})
+
+    first = await service.submit_text(candidate_id=1, question_id=7, text="a")
+    second = await service.submit_text(candidate_id=1, question_id=7, text="b")
+    third = await service.submit_text(candidate_id=1, question_id=7, text="c")
+
+    assert [first.answer.version, second.answer.version, third.answer.version] == [1, 2, 3]
+    with pytest.raises(AttemptsExhaustedError):
+        await service.submit_text(candidate_id=1, question_id=7, text="d")
+
+
+async def test_unchanged_resubmission_does_not_consume_attempt(tmp_path) -> None:
+    service, _, _, _ = _answers_service(tmp_path, question_ids={7})
+
+    first = await service.submit_text(candidate_id=1, question_id=7, text="a")
+    again = await service.submit_text(candidate_id=1, question_id=7, text="a")
+
+    assert again.unchanged is True
+    assert service.attempts_remaining(again.answer) == 2
+    assert service.attempts_remaining(first.answer) == 2
+
+
+async def test_attempts_remaining_counts_changed_submissions(tmp_path) -> None:
+    service, _, _, _ = _answers_service(tmp_path, question_ids={7})
+
+    assert service.attempts_remaining(None) == 3
+    result = await service.submit_text(candidate_id=1, question_id=7, text="a")
+    assert service.attempts_remaining(result.answer) == 2
+
+
+async def test_attempts_remaining_clamps_to_zero(tmp_path) -> None:
+    answer = Answer(
+        id=10,
+        candidate_id=1,
+        question_id=7,
+        answer_type="text",
+        text="old",
+        audio_key=None,
+        content_hash="old",
+        version=5,
+        external_ref=None,
+        submitted_at=datetime.now(UTC),
+    )
+    service, _, _, _ = _answers_service(
+        tmp_path, question_ids={7}, answers=[answer], max_submissions=2
+    )
+
+    assert service.attempts_remaining(answer) == 0
+
+
+async def test_submit_audio_at_limit_does_not_overwrite_accepted_file(tmp_path) -> None:
+    accepted = Answer(
+        id=10,
+        candidate_id=1,
+        question_id=7,
+        answer_type="audio",
+        text=None,
+        audio_key="audio/1/7.m4a",
+        content_hash="accepted",
+        version=3,
+        external_ref=None,
+        submitted_at=datetime.now(UTC),
+    )
+    service, _, _, file_storage = _answers_service(
+        tmp_path, question_ids={7}, answers=[accepted]
+    )
+    await file_storage.save("audio/1/7.m4a", b"accepted")
+
+    with pytest.raises(AttemptsExhaustedError):
+        await service.submit_audio(
+            candidate_id=1,
+            question_id=7,
+            data=b"rejected",
+            filename="clip.m4a",
+        )
+
+    assert await file_storage.read("audio/1/7.m4a") == b"accepted"
