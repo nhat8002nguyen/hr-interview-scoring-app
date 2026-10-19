@@ -59,11 +59,9 @@ HR flow, against the production Vercel app:
 
 - Production contains test candidates created by the validation runs
   (`Deployment Smoke`, `Edge Limit Smoke`, `Browser Smoke`) and one override
-  on a data-pack candidate. The imported pack is otherwise intact.
-- The GitHub Actions backend deploy is serialized with a concurrency group.
-- A single-host deploy briefly stops the old API while the new image becomes
-  healthy. This is accepted for phase 1.
-- Vercel Git auto-deploy is a manual follow-up because the Vercel GitHub app
-  is not installed on the private repository. When enabling it, set the
-  project Root Directories to `apps/candidate-web` and `apps/hr-web`.
-- Rotate the Vercel token and VPS root password after handoff.
+  on a data-pack candidate.
+  The imported pack is otherwise intact.
+- The GitHub Actions backend deploy is serialized with a concurrency group
+  (`deploy-backend`).
+- Deploy downtime, Vercel Git root-directory follow-ups, and credential
+  rotation are owned by [`deploy/README.md`](../../deploy/README.md).
