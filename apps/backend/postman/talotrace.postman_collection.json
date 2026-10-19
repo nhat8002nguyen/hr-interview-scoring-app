@@ -1,0 +1,735 @@
+{
+  "info": {
+    "name": "Talotrace API",
+    "description": "Local and deployed API flows for the Talotrace interview-scoring backend.\n\nSet `baseUrl`, then import the environment file or fill the collection variables. Run `Auth / Sign in (HR)` first: it stores `accessToken` and `refreshToken`. On a clean database, run `HR - import / Import data pack` next so roles and questions exist. The role, candidate, and answer requests then store the IDs used by later requests.\n\nCandidate requests use the `X-Candidate-Token` header. HR requests use `Authorization: Bearer {{accessToken}}`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "refreshToken",
+      "value": ""
+    },
+    {
+      "key": "candidateToken",
+      "value": ""
+    },
+    {
+      "key": "roleId",
+      "value": "1"
+    },
+    {
+      "key": "candidateId",
+      "value": "1"
+    },
+    {
+      "key": "question1Id",
+      "value": "1"
+    },
+    {
+      "key": "question2Id",
+      "value": "2"
+    },
+    {
+      "key": "answerId",
+      "value": "1"
+    },
+    {
+      "key": "jobId",
+      "value": "1"
+    },
+    {
+      "key": "hrEmail",
+      "value": "hr@talotrace.ai"
+    },
+    {
+      "key": "hrPassword",
+      "value": "change-me"
+    },
+    {
+      "key": "audioAnswerId",
+      "value": "2"
+    },
+    {
+      "key": "hasFailedJob",
+      "value": "false"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('database is reachable', function () {",
+                  "    pm.expect(pm.response.json()).to.eql({ status: 'ok' });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Sign in (HR)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{hrEmail}}\",\n  \"password\": \"{{hrPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/sign-in"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('returns an HR user and both tokens', function () {",
+                  "    pm.expect(body.user.role).to.eql('hr');",
+                  "    pm.expect(body.access_token).to.be.a('string');",
+                  "    pm.expect(body.refresh_token).to.be.a('string');",
+                  "});",
+                  "pm.environment.set('accessToken', body.access_token);",
+                  "pm.environment.set('refreshToken', body.refresh_token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh tokens",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/refresh-tokens"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.environment.set('accessToken', body.access_token);",
+                  "pm.environment.set('refreshToken', body.refresh_token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sign out (HR)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/sign-out"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 No Content', function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "HR - import",
+      "item": [
+        {
+          "name": "Import data pack",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "",
+                  "description": "Select business-systems-pack.zip. The import is idempotent on external refs."
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/hr/import"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const summary = pm.response.json();",
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('returns the import summary', function () {",
+                  "    pm.expect(summary).to.include.keys(",
+                  "        'roles_created',",
+                  "        'questions_created',",
+                  "        'candidates_created',",
+                  "        'answers_imported',",
+                  "        'scoring_jobs_queued',",
+                  "        'audio_answers_needing_person'",
+                  "    );",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "HR - catalog and candidates",
+      "item": [
+        {
+          "name": "List roles",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/hr/roles"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const roles = pm.response.json();",
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('returns at least one role', function () {",
+                  "    pm.expect(roles).to.be.an('array').that.is.not.empty;",
+                  "});",
+                  "if (roles.length > 0) {",
+                  "    pm.environment.set('roleId', roles[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List candidates for role",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/hr/roles/{{roleId}}/candidates"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const items = pm.response.json();",
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "if (items.length > 0) {",
+                  "    pm.environment.set('candidateId', items[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get candidate detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/hr/candidates/{{candidateId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const detail = pm.response.json();",
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('includes an interview link', function () {",
+                  "    pm.expect(detail.interview_link).to.be.a('string');",
+                  "});",
+                  "if (detail.answers.length > 0) {",
+                  "    pm.environment.set('answerId', detail.answers[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create candidate",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman Candidate\",\n  \"email\": \"postman+{{$timestamp}}@talotrace.ai\",\n  \"role_id\": {{roleId}}\n}"
+            },
+            "url": "{{baseUrl}}/hr/candidates"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const candidate = pm.response.json();",
+                  "pm.test('201 Created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "pm.test('returns an interview link and session token', function () {",
+                  "    pm.expect(candidate.interview_link).to.be.a('string');",
+                  "    pm.expect(candidate.session_token).to.be.a('string');",
+                  "});",
+                  "pm.environment.set('candidateId', candidate.id);",
+                  "pm.environment.set('candidateToken', candidate.session_token);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Candidate interview",
+      "item": [
+        {
+          "name": "Get interview",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Candidate-Token",
+                "value": "{{candidateToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/candidate/interview"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const interview = pm.response.json();",
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('returns six questions', function () {",
+                  "    pm.expect(interview.questions).to.have.length(6);",
+                  "});",
+                  "pm.test('never leaks scores or grading guides', function () {",
+                  "    pm.expect(interview.questions[0]).to.not.have.property('grading_guide');",
+                  "    pm.expect(interview.questions[0]).to.not.have.property('scoring');",
+                  "});",
+                  "pm.environment.set('question1Id', interview.questions[0].id);",
+                  "pm.environment.set('question2Id', interview.questions[1].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Submit text answer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Candidate-Token",
+                "value": "{{candidateToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"answer_type\": \"text\",\n  \"text\": \"I led a payments reliability fix that removed duplicate charges. I designed the idempotency key, shipped the migration and tests, and measured zero repeats over the next quarter.\"\n}"
+            },
+            "url": "{{baseUrl}}/candidate/interview/answers/{{question1Id}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('answer received (201 or 200 for an identical resubmit)', function () {",
+                  "    pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('returns version and attempts remaining', function () {",
+                  "    pm.expect(body.answer.version).to.be.a('number');",
+                  "    pm.expect(body.attempts_remaining).to.be.a('number');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Submit audio answer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Candidate-Token",
+                "value": "{{candidateToken}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "",
+                  "description": "Select an audio file (for example .m4a or .mp3)."
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/candidate/interview/answers/{{question2Id}}/audio"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('answer received (201 or 200 for an identical resubmit)', function () {",
+                  "    pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('audio answer is stored', function () {",
+                  "    pm.expect(body.answer.answer_type).to.eql('audio');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "HR - answers and scoring",
+      "item": [
+        {
+          "name": "Refresh answer IDs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/hr/candidates/{{candidateId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const detail = pm.response.json();",
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "if (detail.answers.length > 0) {",
+                  "    const question1 = String(pm.environment.get('question1Id'));",
+                  "    const textAnswer = detail.answers.find(function (answer) {",
+                  "        return String(answer.question_id) === question1;",
+                  "    });",
+                  "    const audioAnswer = detail.answers.find(function (answer) {",
+                  "        return answer.answer_type === 'audio';",
+                  "    });",
+                  "    pm.environment.set('answerId', (textAnswer || detail.answers[0]).id);",
+                  "    if (audioAnswer) {",
+                  "        pm.environment.set('audioAnswerId', audioAnswer.id);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get answer detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/hr/answers/{{answerId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const answer = pm.response.json();",
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('includes the grading guide and scoring detail', function () {",
+                  "    pm.expect(answer.grading_guide).to.be.an('object');",
+                  "    pm.expect(answer.scoring).to.be.an('object');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get answer audio",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/hr/answers/{{audioAnswerId}}/audio"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK for an audio answer', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('returns an audio content type', function () {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('audio/');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Override score",
+          "request": {
+            "description": "Overrides the audio answer, which is immediately eligible as `needs_a_person`. To override a scored text answer instead, point the URL at `{{answerId}}` after the scoring job reaches `scored`.",
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"final_score\": 4,\n  \"override_reason\": \"Candidate measured the impact and reflected on what they would change.\"\n}"
+            },
+            "url": "{{baseUrl}}/hr/answers/{{audioAnswerId}}/score"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const answer = pm.response.json();",
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('override is stored with its reason', function () {",
+                  "    pm.expect(answer.scoring.final_score).to.eql(4);",
+                  "    pm.expect(answer.scoring.override_reason).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List scoring jobs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/hr/scoring-jobs?status=failed"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const jobs = pm.response.json();",
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.environment.set('hasFailedJob', jobs.length > 0 ? 'true' : 'false');",
+                  "if (jobs.length > 0) {",
+                  "    pm.environment.set('jobId', jobs[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Retry scoring job",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/hr/scoring-jobs/{{jobId}}/retry"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.environment.get('hasFailedJob') !== 'true') {",
+                  "    console.log('No failed job to retry; skipping this request.');",
+                  "    postman.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK when the job was failed', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('job returns to queued', function () {",
+                  "    pm.expect(pm.response.json().status).to.eql('queued');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

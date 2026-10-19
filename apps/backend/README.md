@@ -69,6 +69,31 @@ The repository-level `docker-compose.yml` builds this app with build context `./
 
 The `migrate` service runs `alembic upgrade head` and the `api` service waits for it to finish before starting.
 
+### Standalone Compose
+
+To run only Postgres, migrations, and the API:
+
+```bash
+cd apps/backend
+cp .env.example .env
+docker compose up --build
+```
+
+The API is served on `http://localhost:3000` and Postgres on `localhost:5432`.
+The env template is [`apps/backend/.env.example`](./.env.example).
+Migrations run automatically before the API starts.
+
+## Postman
+
+Import the collection and local environment from [`apps/backend/postman`](./postman):
+
+- [`talotrace.postman_collection.json`](./postman/talotrace.postman_collection.json)
+- [`talotrace-local.postman_environment.json`](./postman/talotrace-local.postman_environment.json)
+
+Run `Auth / Sign in (HR)` first; it stores the tokens in the environment.
+Then run the role, candidate, and scoring folders in order.
+Change `baseUrl` to point at a deployed API when needed.
+
 ## Migrate, sign in, import flow
 
 The data-pack importer is the HR onboarding path.
@@ -105,9 +130,11 @@ The import is idempotent on the data pack's external refs, so re-importing does 
 | `CANDIDATE_WEB_ORIGIN` | origin used to build interview links | `http://localhost:3001` | same |
 | `DEEPSEEK_API_KEY` | LLM provider key | empty | `${DEEPSEEK_API_KEY:-}` |
 | `DEEPSEEK_MODEL` | LLM model id | `deepseek-chat` | same |
+| `DEEPSEEK_BASE_URL` | OpenAI-compatible LLM base URL | `https://api.deepseek.com` | same |
 | `AUDIO_STORAGE_DIR` | audio file directory | `/tmp/talotrace-audio` | `/data/audio` |
 | `SCORING_WORKERS` | worker pool size | `2` | `2` |
 | `SCORING_MAX_ATTEMPTS` | retry ceiling before `failed` | `3` | `3` |
+| `SCORING_LEASE_TIMEOUT_SECONDS` | stale claim recovery window | `300` | `300` |
 | `MAX_ANSWER_SUBMISSIONS` | max changed submits per candidate x question | `3` | `3` |
 | `SEED_HR_EMAIL` | seeded HR account email | `hr@talotrace.ai` | same |
 | `SEED_HR_PASSWORD` | seeded HR account password | `change-me` | same |
