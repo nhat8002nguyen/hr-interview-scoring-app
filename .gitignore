@@ -48,3 +48,6 @@ intial-resources/
 /talot-backend/
 /talot-candidate-web/
 /talot-hr-web/
+
+# secrets
+secrets.txt
