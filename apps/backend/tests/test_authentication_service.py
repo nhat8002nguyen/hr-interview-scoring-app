@@ -232,6 +232,38 @@ async def test_sign_up_unique_violation_on_add_maps_to_conflict() -> None:
         await service.sign_up("race@example.com", "password123")
 
 
+async def test_sign_up_then_sign_in_with_different_email_casing() -> None:
+    users = FakeUserRepository()
+    service = AuthenticationService(
+        users=users,
+        hashing=FakeHashingService(),
+        jwt=_jwt(),
+        refresh_tokens=FakeRefreshTokenStorage(),
+    )
+
+    signed_up = await service.sign_up("  Alex@Acme.com ", "password123")
+    signed_in = await service.sign_in("alex@acme.com", "password123")
+
+    assert signed_up.user.email == "alex@acme.com"
+    assert signed_in.user.email == "alex@acme.com"
+    stored = await users.get_by_email("alex@acme.com")
+    assert stored is not None
+    assert stored.email == "alex@acme.com"
+
+
+async def test_sign_up_duplicate_email_is_case_insensitive() -> None:
+    existing = User(id=7, email="alex@acme.com", password_hash="hashed:x", role=Role.HR)
+    service = AuthenticationService(
+        users=FakeUserRepository(by_email={existing.email: existing}),
+        hashing=FakeHashingService(),
+        jwt=_jwt(),
+        refresh_tokens=FakeRefreshTokenStorage(),
+    )
+
+    with pytest.raises(EmailAlreadyExistsError):
+        await service.sign_up("Alex@Acme.com", "password123")
+
+
 async def test_sign_up_short_password_raises() -> None:
     service = AuthenticationService(
         users=FakeUserRepository(),

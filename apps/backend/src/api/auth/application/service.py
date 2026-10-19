@@ -26,6 +26,10 @@ def _is_unique_violation(exc: IntegrityError) -> bool:
     return code == _UNIQUE_VIOLATION
 
 
+def _normalize_email(email: str) -> str:
+    return email.strip().lower()
+
+
 @dataclass(frozen=True, slots=True)
 class AuthTokens:
     user: User
@@ -49,12 +53,14 @@ class AuthenticationService:
         self._min_password_length = min_password_length
 
     async def sign_in(self, email: str, password: str) -> AuthTokens:
+        email = _normalize_email(email)
         user = await self._users.get_by_email(email)
         if user is None or not await self._hashing.compare(password, user.password_hash):
             raise UnauthorizedError("Invalid credentials")
         return await self._issue_tokens(user)
 
     async def sign_up(self, email: str, password: str) -> AuthTokens:
+        email = _normalize_email(email)
         if len(password) < self._min_password_length:
             raise WeakPasswordError(self._min_password_length)
         if await self._users.get_by_email(email) is not None:
