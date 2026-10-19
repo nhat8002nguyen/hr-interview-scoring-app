@@ -10,6 +10,14 @@ Each application is self-contained inside its own folder under `apps/`.
 - [`apps/candidate-web`](./apps/candidate-web) - candidate Next.js app on port `3001`.
 - [`apps/hr-web`](./apps/hr-web) - HR Next.js app on port `3002`.
 
+## Live
+
+- Candidate app: https://talot-candidate-web.vercel.app
+- HR app: https://talot-hr-web.vercel.app
+- API health: https://talot-api.nate-ng.com/health
+
+Production deploy details and host bootstrap live in [`deploy/README.md`](./deploy/README.md).
+
 ## Local full stack
 
 Start Postgres, migrations, the backend, and both web apps from the repository root:
