@@ -298,7 +298,7 @@ Response `201` (or `200` when unchanged):
 
 `422` if `text` is empty/whitespace or `answer_type` is not `text`. `404` if `question_id` is not one of the six. `409` if the content changed and the candidate has already used `MAX_ANSWER_SUBMISSIONS` submissions for that question.
 
-`POST /candidate/interview/answers/{question_id}/audio` - Request: `multipart/form-data` with field `file` (audio). Response `201`/`200` (same shape, `answer_type: "audio"`, hash over the file bytes). `422` on missing/invalid file, `404` unknown question.
+`POST /candidate/interview/answers/{question_id}/audio` - Request: `multipart/form-data` with field `file` (audio). Response `201`/`200` (same shape, `answer_type: "audio"`, hash over the file bytes). `422` on missing/invalid file, `404` unknown question. `409` if the content changed and the candidate has already used `MAX_ANSWER_SUBMISSIONS` submissions for that question.
 
 Resubmission semantics: submitting again for the same question upserts the single active answer. Identical content (same `content_hash`) is a no-op; changed content increments `version`, replaces content, and resets the scoring job to `queued`. The response reports `unchanged` and the current `version`.
 

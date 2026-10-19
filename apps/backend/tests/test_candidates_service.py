@@ -375,6 +375,93 @@ async def test_submit_audio_at_limit_does_not_overwrite_accepted_file(tmp_path) 
     assert await file_storage.read("audio/1/7.m4a") == b"accepted"
 
 
+async def test_submit_audio_identical_at_limit_is_noop(tmp_path) -> None:
+    data = b"accepted-audio"
+    content_hash = sha256(data).hexdigest()
+    accepted = Answer(
+        id=10,
+        candidate_id=1,
+        question_id=7,
+        answer_type="audio",
+        text=None,
+        audio_key=f"audio/1/7/{content_hash}.m4a",
+        content_hash=content_hash,
+        version=3,
+        external_ref=None,
+        submitted_at=datetime.now(UTC),
+    )
+    service, _, scoring_jobs, _ = _answers_service(
+        tmp_path, question_ids={7}, answers=[accepted]
+    )
+
+    result = await service.submit_audio(
+        candidate_id=1,
+        question_id=7,
+        data=data,
+        filename="clip.m4a",
+    )
+
+    assert result.unchanged is True
+    assert result.answer.version == 3
+    assert result.answer.content_hash == content_hash
+    assert service.attempts_remaining(result.answer) == 0
+    assert scoring_jobs.reset_calls == []
+
+
+async def test_submit_audio_identical_returns_post_upsert_row(tmp_path) -> None:
+    data = b"same-bytes"
+    content_hash = sha256(data).hexdigest()
+    active = Answer(
+        id=10,
+        candidate_id=1,
+        question_id=7,
+        answer_type="audio",
+        text=None,
+        audio_key=f"audio/1/7/{content_hash}.m4a",
+        content_hash=content_hash,
+        version=1,
+        external_ref=None,
+        submitted_at=datetime.now(UTC),
+    )
+    service, answers_repo, _, _ = _answers_service(
+        tmp_path, question_ids={7}, answers=[active]
+    )
+    concurrent = Answer(
+        id=10,
+        candidate_id=1,
+        question_id=7,
+        answer_type="audio",
+        text=None,
+        audio_key="audio/1/7/other.m4a",
+        content_hash="other",
+        version=2,
+        external_ref=None,
+        submitted_at=datetime.now(UTC),
+    )
+    original_get_active = answers_repo.get_active
+
+    async def get_active_then_race(
+        candidate_id: int, question_id: int
+    ) -> Answer | None:
+        row = await original_get_active(candidate_id, question_id)
+        answers_repo._answers[(candidate_id, question_id)] = concurrent
+        return row
+
+    answers_repo.get_active = get_active_then_race  # type: ignore[method-assign]
+
+    result = await service.submit_audio(
+        candidate_id=1,
+        question_id=7,
+        data=data,
+        filename="clip.m4a",
+    )
+
+    assert result.unchanged is False
+    assert result.answer.version == 3
+    assert result.answer.content_hash == content_hash
+    assert service.attempts_remaining(result.answer) == 0
+
+
 async def test_rejected_audio_race_does_not_overwrite_accepted_file(tmp_path) -> None:
     accepted = Answer(
         id=10,

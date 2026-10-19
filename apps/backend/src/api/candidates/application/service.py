@@ -153,9 +153,11 @@ class AnswersService:
         content_hash = sha256(data).hexdigest()
         async with self._uow_factory() as uow:
             active = await uow.answers.get_active(candidate_id, question_id)
-        if active is not None and active.content_hash == content_hash:
-            return SubmitResult(status="received", unchanged=True, answer=active)
-        if active is not None and active.version >= self.max_submissions:
+        if (
+            active is not None
+            and active.version >= self.max_submissions
+            and active.content_hash != content_hash
+        ):
             raise AttemptsExhaustedError(question_id, self.max_submissions)
         ext = Path(filename).suffix or ".m4a"
         key = f"audio/{candidate_id}/{question_id}/{content_hash}{ext}"
