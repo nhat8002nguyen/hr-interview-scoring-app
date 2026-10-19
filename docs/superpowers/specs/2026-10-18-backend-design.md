@@ -149,9 +149,11 @@ These are wired as services on `app.state` to avoid module-level import cycles.
   Reuses `JwtService`, `BcryptHashingService`, and `RefreshTokenStorageProtocol`.
 - `presentation/{router,schemas,dependencies}.py`: auth router under `/auth`, RFC 7807 error handlers.
 
+`sign_in` and `sign_up` normalize the email (strip whitespace, lowercase) before lookup and persist.
 `sign_up(email, password)` checks the email is not already registered, hashes the password, adds the user with `role = Role.HR`, and issues tokens through the same `_issue_tokens` path as sign-in.
-It raises `EmailAlreadyExistsError` (mapped to `409`) when the email is registered, and `WeakPasswordError` (mapped to `422`) when the password is shorter than `password_min_length` (default 8).
+It raises `EmailAlreadyExistsError` (mapped to `409`) when the email is registered or when insert hits a unique-violation `IntegrityError`, and `WeakPasswordError` (mapped to `422`) when the password is shorter than `password_min_length` (default 8).
 The password minimum is enforced in the service, not in the Pydantic schema.
+`CandidatesService.create_candidate` maps the same unique-violation case on `(owner_id, email)` to `CandidateAlreadyExistsError`.
 
 Sign-in and sign-up are both guarded by an in-process fixed-window rate limiter keyed by client IP (and, for sign-up, by email).
 It is configured via `auth_rate_limit` and `auth_rate_limit_window_seconds` and returns `429` when exceeded.
@@ -410,14 +412,14 @@ The reply is schema-validated so only a `score` and `reasoning` can be stored, d
 2. Ensure the five roles from the `Open roles` list exist.
 3. Parse `pipeline_log.csv` into `candidate_id -> (name, email, role)`.
 4. For each `answers/*.json`, resolve the role by name, find-or-create the candidate by `external_ref = candidate_id` within the caller's `owner_id` (set `name`/`email` from the pipeline log, else a placeholder from `candidate_id`, and generate a `session_token`), then create the answer by `external_ref = answer_id`.
-   Transcript answers enqueue a `queued` scoring job; audio-only answers store the `.m4a` and create a `needs_a_person` job.
+   Transcript answers enqueue a `queued` scoring job; audio-only answers store the `.m4a` under `audio/import/{candidate_id}/{answer_id}.m4a` and create a `needs_a_person` job.
 5. Return the summary counts.
 
 `roles` and `questions` upsert globally and idempotently, exactly as today.
 Candidates and answers are tagged with the caller's `owner_id`.
 
 Import is idempotent on `external_ref` per owner: re-importing the same pack as the same HR account does not duplicate questions, candidates, or answers.
-A different account importing the same pack gets its own isolated copies.
+A different account importing the same pack gets its own isolated copies (including audio blobs).
 Unreadable zip or unexpected layout returns `400`; oversized files return `413`.
 
 ## 12. Cross-Cutting Concerns

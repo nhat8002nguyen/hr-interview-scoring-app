@@ -20,9 +20,7 @@ class CandidateModel(Base):
     __tablename__ = "candidates"
     __table_args__ = (
         UniqueConstraint("owner_id", "email", name="uq_candidates_owner_email"),
-        UniqueConstraint(
-            "owner_id", "external_ref", name="uq_candidates_owner_external_ref"
-        ),
+        UniqueConstraint("owner_id", "external_ref", name="uq_candidates_owner_external_ref"),
         Index("ix_candidates_owner_role", "owner_id", "role_id"),
     )
 

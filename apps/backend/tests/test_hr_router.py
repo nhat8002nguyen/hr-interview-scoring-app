@@ -44,9 +44,7 @@ class FakeCandidatesService:
 
     async def list_candidates_for_role(self, role_id: int, owner_id: int) -> list[Candidate]:
         return [
-            c
-            for c in self._candidates.values()
-            if c.role_id == role_id and c.owner_id == owner_id
+            c for c in self._candidates.values() if c.role_id == role_id and c.owner_id == owner_id
         ]
 
     async def get_owned_candidate(self, candidate_id: int, owner_id: int) -> Candidate:

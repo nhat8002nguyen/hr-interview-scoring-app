@@ -272,9 +272,7 @@ async def test_override_wrong_status_409() -> None:
     scoring = FakeScoringService(
         override_error=ScoringJobInvalidTransitionError(1, "queued"),
     )
-    app, jwt_service = _app(
-        scoring, FakeAnswersService([_answer(31, 12, 1)], owners={12: 1})
-    )
+    app, jwt_service = _app(scoring, FakeAnswersService([_answer(31, 12, 1)], owners={12: 1}))
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.patch(

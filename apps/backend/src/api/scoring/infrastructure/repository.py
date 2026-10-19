@@ -152,9 +152,7 @@ class SqlAlchemyScoringJobRepository:
         if row is None:
             return None
         await self._session.execute(
-            update(ScoringJobModel)
-            .where(ScoringJobModel.id == row.id)
-            .values(claimed_at=now)
+            update(ScoringJobModel).where(ScoringJobModel.id == row.id).values(claimed_at=now)
         )
         return replace(self._to_job(row), claimed_at=now)
 

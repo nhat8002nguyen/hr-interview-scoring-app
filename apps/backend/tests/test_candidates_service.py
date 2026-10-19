@@ -52,11 +52,7 @@ class FakeCandidateRepository:
 
     async def get_by_email(self, owner_id: int, email: str) -> Candidate | None:
         return next(
-            (
-                c
-                for c in self._candidates.values()
-                if c.email == email and c.owner_id == owner_id
-            ),
+            (c for c in self._candidates.values() if c.email == email and c.owner_id == owner_id),
             None,
         )
 
@@ -78,16 +74,12 @@ class FakeCandidateRepository:
 
     async def list_by_role(self, owner_id: int, role_id: int) -> list[Candidate]:
         return [
-            c
-            for c in self._candidates.values()
-            if c.role_id == role_id and c.owner_id == owner_id
+            c for c in self._candidates.values() if c.role_id == role_id and c.owner_id == owner_id
         ]
 
     async def count_by_role(self, owner_id: int, role_id: int) -> int:
         return sum(
-            1
-            for c in self._candidates.values()
-            if c.role_id == role_id and c.owner_id == owner_id
+            1 for c in self._candidates.values() if c.role_id == role_id and c.owner_id == owner_id
         )
 
 

@@ -138,6 +138,9 @@ The import is idempotent on the data pack's external refs, so re-importing does 
 | `MAX_ANSWER_SUBMISSIONS` | max changed submits per candidate x question | `3` | `3` |
 | `SEED_HR_EMAIL` | seeded HR account email | `hr@talotrace.ai` | same |
 | `SEED_HR_PASSWORD` | seeded HR account password | `change-me` | same |
+| `PASSWORD_MIN_LENGTH` | minimum sign-up password length | `8` | same |
+| `AUTH_RATE_LIMIT` | max sign-in/sign-up requests per window | `60` | same |
+| `AUTH_RATE_LIMIT_WINDOW_SECONDS` | rate-limit window in seconds | `60` | same |
 
 ## Layout
 

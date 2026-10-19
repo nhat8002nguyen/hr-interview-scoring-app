@@ -40,12 +40,14 @@ Out of scope:
 | Tenancy boundary | `roles` and `questions` are shared, read-only reference data. `candidates`, `answers`, and `scoring_jobs` are owned. |
 | Ownership anchor | `owner_id` lives only on `candidates`. Ownership of answers and jobs is resolved by joining through `candidate_id`. |
 | Sign-up identity | Email + password only. No username. |
+| Email normalization | HR emails are stripped and lowercased in `AuthenticationService` on both sign-up and sign-in before lookup and persist. |
 | Sign-up response | `201` with the same `AuthTokensResponse` as sign-in (auto-login). |
-| Duplicate email | `409` on both sign-up and create-candidate, now scoped per owner for candidates. |
+| Duplicate email | `409` on both sign-up and create-candidate, now scoped per owner for candidates. Concurrent unique violations map to the same `409` domain errors. |
 | Cross-tenant access | `404` for both "not yours" and "does not exist". |
 | Seeded account | Stays a normal HR tenant. Legacy data is backfilled to it. Its credentials stay documented in the README. |
 | Password reset | Out of scope. Documented as a known limitation. |
 | Rate limiting | Lightweight in-process fixed-window limiter on sign-in and sign-up. |
+| Imported audio keys | Deterministic per owning candidate: `audio/import/{candidate_id}/{answer_id}.m4a`. |
 
 ## 4. Tenancy Model
 
@@ -167,12 +169,15 @@ Response `201` (same shape as sign-in):
 
 `AuthenticationService` gains a `sign_up(email, password)` method:
 
-1. Reject the request with `409` if `UserRepository.get_by_email(email)` returns a user.
-2. Hash the password with the existing `HashingServiceProtocol`.
-3. Add the user with `role = Role.HR`.
-4. Issue tokens through the existing `_issue_tokens` path, so sign-up reuses sign-in's token rotation exactly.
+1. Normalize the email (strip whitespace, lowercase). `sign_in` uses the same normalization before lookup.
+2. Reject a too-short password with `WeakPasswordError` (`422`).
+3. Reject the request with `409` if `UserRepository.get_by_email(email)` returns a user.
+4. Hash the password with the existing `HashingServiceProtocol`.
+5. Add the user with `role = Role.HR`. On a unique-violation `IntegrityError`, roll back and raise `EmailAlreadyExistsError` so a concurrent duplicate still returns `409`.
+6. Issue tokens through the existing `_issue_tokens` path, so sign-up reuses sign-in's token rotation exactly.
 
 `EmailAlreadyExistsError` is added to `auth/domain/exceptions.py` and mapped to `409`.
+`CandidatesService.create_candidate` maps a unique-violation `IntegrityError` on `(owner_id, email)` to `CandidateAlreadyExistsError` the same way.
 
 ### 7.3 Validation and config
 
@@ -233,11 +238,12 @@ The session token resolves globally by design.
 - Candidate find-or-create keys on `(owner_id, external_ref)` instead of global `external_ref`.
 - New candidates are created with the caller's `owner_id`.
 - Answers attach to the owned candidate.
+- Imported audio is stored under `audio/import/{candidate_id}/{answer_id}.m4a`, so two owners importing the same pack never share a blob.
 
 Consequences:
 
-- Re-importing the same pack as the same owner is idempotent (no duplicates).
-- A different owner importing the same pack gets their own isolated copies.
+- Re-importing the same pack as the same owner is idempotent (no duplicates), including the same audio key per candidate and answer.
+- A different owner importing the same pack gets their own isolated copies (DB rows and audio blobs).
 
 ## 10. Security and Robustness
 
@@ -297,7 +303,7 @@ Frontend (hr-web):
 | HRs do not share data, even with the same role | `owner_id` scoping is independent of `role_id`. |
 | Legacy data stays with the seeded account | Migration backfills `owner_id` to the sole existing user. |
 | Cross-tenant access does not leak existence | `404` for both "not yours" and "does not exist". |
-| Same pack imported by two HRs stays isolated | Import keys candidates on `(owner_id, external_ref)`. |
+| Same pack imported by two HRs stays isolated | Import keys candidates on `(owner_id, external_ref)` and audio on `audio/import/{candidate_id}/{answer_id}.m4a`. |
 | `roles` and `questions` stay shared | They are unchanged global reference data. |
 | Candidate links keep working | `session_token` stays globally unique and is resolved without owner. |
 | No admin escalation needed | Seeded account is a normal tenant; no new role. |

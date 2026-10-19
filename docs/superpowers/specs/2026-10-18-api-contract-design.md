@@ -166,7 +166,7 @@ Enums:
 | question_id | int FK -> questions.id | |
 | answer_type | str | `text` \| `audio` |
 | text | text nullable | transcript for text answers |
-| audio_key | str nullable | `FileStorage` key for audio answers; candidate uploads use `audio/{candidate_id}/{question_id}/{content_hash}{ext}` |
+| audio_key | str nullable | `FileStorage` key for audio answers; candidate uploads use `audio/{candidate_id}/{question_id}/{content_hash}{ext}`; imported audio uses `audio/import/{candidate_id}/{answer_id}.m4a` |
 | content_hash | str | SHA-256 hex of submitted content (UTF-8 text bytes, or audio file bytes) |
 | version | int | starts 1; increments on changed resubmit; doubles as the submission counter for the cap |
 | external_ref | str nullable indexed | data-pack `answer_id` (e.g. `"A001"`) |
@@ -245,7 +245,7 @@ Response `200`:
 }
 ```
 
-`401` on invalid credentials. `POST /auth/refresh-tokens` takes `{ "refresh_token": "..." }` and returns the same shape. `POST /auth/sign-out` takes `{ "refresh_token": "..." }` and returns `204`.
+`401` on invalid credentials. Emails are stripped and lowercased before lookup, so sign-in casing does not matter. `POST /auth/refresh-tokens` takes `{ "refresh_token": "..." }` and returns the same shape. `POST /auth/sign-out` takes `{ "refresh_token": "..." }` and returns `204`.
 
 `POST /auth/sign-up`
 
@@ -263,7 +263,8 @@ Response `201` (same shape as sign-in, auto-login):
 }
 ```
 
-`409` if the email is already registered.
+Emails are stripped and lowercased before persist and uniqueness checks, so `Alex@Acme.com` and `alex@acme.com` are the same account.
+`409` if the email is already registered (including concurrent unique violations).
 `422` if the email is malformed or the password is shorter than the configured minimum (`password_min_length`, default 8).
 
 ### 7.2 Candidate (session token)
@@ -495,11 +496,11 @@ Response `200` (updated answer shape). `override_reason` is required (non-empty)
 4. For each `answers/*.json`:
    - Resolve role by name.
    - Find-or-create the `candidate` by `external_ref = candidate_id` within the caller's `owner_id`; set `name`/`email` from `pipeline_log.csv` when present, otherwise fall back to a placeholder derived from `candidate_id`. Generate a `session_token`.
-   - Create the `answer` (`external_ref = answer_id`). If `transcript` is present: `answer_type=text`, enqueue `scoring_job(status=queued)`. If `audio_file` is present and `transcript` is null: `answer_type=audio`, store the `.m4a` via `FileStorage`, set `scoring_job(status=needs_a_person)`.
+   - Create the `answer` (`external_ref = answer_id`). If `transcript` is present: `answer_type=text`, enqueue `scoring_job(status=queued)`. If `audio_file` is present and `transcript` is null: `answer_type=audio`, store the `.m4a` under `audio/import/{candidate_id}/{answer_id}.m4a`, set `scoring_job(status=needs_a_person)`.
 5. Return the summary above.
 
 Import is idempotent on `external_ref` per owner: re-importing the same pack as the same HR account does not duplicate questions, candidates, or answers.
-A different account importing the same pack gets its own isolated candidates.
+A different account importing the same pack gets its own isolated candidates and audio blobs.
 HR import bypasses the candidate submission cap: answer upserts run with no `version < max_submissions` guard (`max_submissions=None`), so a pack can load or replace answers even when `version` already meets `MAX_ANSWER_SUBMISSIONS`.
 
 ## 9. Errors

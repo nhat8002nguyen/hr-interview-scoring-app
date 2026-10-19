@@ -48,9 +48,7 @@ class FakeScoringJobRepository:
         owners: dict[int, int] | None = None,
     ) -> None:
         self._jobs: dict[int, ScoringJob] = {job.id: job for job in jobs or []}
-        self._by_answer: dict[int, ScoringJob] = {
-            job.answer_id: job for job in jobs or []
-        }
+        self._by_answer: dict[int, ScoringJob] = {job.answer_id: job for job in jobs or []}
         self._owners = owners or {}
         self._next_id = max(self._jobs, default=0) + 1
         self.upsert_calls: list[tuple[int, str]] = []
