@@ -74,7 +74,7 @@ Endpoint paths, request/response shapes, status codes, and the scoring status mo
 | Mutations | Route handlers (POST/PATCH). Forms validate with `zod` before the handler calls FastAPI. |
 | Token refresh | On FastAPI `401`, the route-handler layer rotates via `POST /auth/refresh-tokens`, writes updated cookies, and retries once. |
 | Refresh concurrency | Single-flight: concurrent requests that hit `401` share one rotation, so the single-use refresh token is consumed exactly once. |
-| Styling | Tailwind CSS v4 plus a few hand-rolled primitives (Card, Badge, Button, Textarea, Select). No heavy UI library. |
+| Styling | Tailwind CSS v4 plus a few hand-rolled primitives (Card, Badge, Button, Textarea, Select). No heavy UI library. Light-only: `:root` declares `color-scheme: light` with `--background: #ffffff` and `--foreground: #171717`; no `prefers-color-scheme: dark` palette, `dark:` variants, or theme toggle. |
 | State management | None beyond React local state. Server route handlers are the source of truth; the client reflects their responses. |
 | Types | TypeScript types for every contract response, defined in `lib/contracts` and kept in lock-step with the API contract. |
 | Audio | Streamed through a route handler (`/api/hr/answers/[answerId]/audio`) so auth rides the same-origin cookie and the bearer token is not needed in an `<audio>` tag. |
@@ -231,6 +231,7 @@ A `409` duplicate email is shown inline.
 - **Component/unit (Vitest + React Testing Library):** `ScoringBadge` state-to-render mapping, override form validation, sign-up form validation, the sign-in -> sign-up link, "failed never renders a score".
 - **Route handler (unit, mocked `lib/api`):** cookie set/clear on sign-in/sign-up/sign-out, single-flight refresh, problem-detail mapping (`409`/`422` on sign-up).
 - **End-to-end (Playwright against the real API and a seeded data pack):** sign in, roles to candidates to answer, override with reason, retry a failed job, import the pack and observe the summary, and confirm a duplicate submission yields a single score.
+- **Theme regression (Playwright):** `e2e/sign-in-theme.spec.ts` emulates light and dark `prefers-color-scheme` on `/sign-in` and asserts computed body, card, heading, label, and input colors stay light (`rgb(23, 23, 23)` on white) with `color-scheme: light`.
 - Mirrors the frontend section of API contract section 13.
 
 ## 13. Traceability
