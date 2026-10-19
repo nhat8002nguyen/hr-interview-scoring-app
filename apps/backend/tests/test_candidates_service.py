@@ -246,6 +246,37 @@ async def test_create_candidate_generates_token_and_conflicts_on_email() -> None
         )
 
 
+async def test_candidate_email_is_unique_per_owner_not_globally() -> None:
+    candidates = FakeCandidateRepository()
+    service = CandidatesService(
+        lambda: FakeCandidatesUnitOfWork(candidates, FakeAnswerRepository())
+    )
+
+    first = await service.create_candidate(
+        name="Ada",
+        email="ada@example.com",
+        role_id=2,
+        owner_id=1,
+    )
+    other = await service.create_candidate(
+        name="Ada",
+        email="ada@example.com",
+        role_id=2,
+        owner_id=2,
+    )
+
+    assert first.id != other.id
+    assert (first.owner_id, other.owner_id) == (1, 2)
+
+    with pytest.raises(CandidateAlreadyExistsError):
+        await service.create_candidate(
+            name="Ada",
+            email="ada@example.com",
+            role_id=2,
+            owner_id=1,
+        )
+
+
 async def test_submit_text_unchanged_is_noop(tmp_path) -> None:
     service, _, scoring_jobs, _ = _answers_service(tmp_path, question_ids={7})
 

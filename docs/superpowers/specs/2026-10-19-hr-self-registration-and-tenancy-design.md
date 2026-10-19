@@ -220,7 +220,7 @@ The session token resolves globally by design.
 
 - `Candidate` entity gains `owner_id`.
 - `CandidateRepository` methods that read by id, email, external ref, or role now take an `owner_id`.
-- `CandidatesService.create_candidate`, `list_candidates_for_role`, `count_by_role`, and `get_candidate` accept an `owner_id`.
+- `CandidatesService.create_candidate`, `list_candidates_for_role`, and `count_by_role` accept an `owner_id`; `get_owned_candidate(candidate_id, owner_id)` is the ownership choke point for loading a candidate by id.
 - `CatalogService.list_roles` and the `RoleCandidateCounter` count candidates per owner.
 - `ScoringService.list_jobs` and `retry` accept an `owner_id`.
 - `AnswersService` read methods used by HR resolve ownership through the candidate.

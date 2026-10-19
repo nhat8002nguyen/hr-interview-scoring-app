@@ -81,13 +81,6 @@ class CandidatesService:
         async with self._uow_factory() as uow:
             return await uow.candidates.get_by_session_token(token)
 
-    async def get_candidate(self, id: int) -> Candidate:
-        async with self._uow_factory() as uow:
-            candidate = await uow.candidates.get(id)
-        if candidate is None:
-            raise CandidateNotFoundError(id)
-        return candidate
-
     async def get_owned_candidate(self, candidate_id: int, owner_id: int) -> Candidate:
         async with self._uow_factory() as uow:
             candidate = await uow.candidates.get(candidate_id)
