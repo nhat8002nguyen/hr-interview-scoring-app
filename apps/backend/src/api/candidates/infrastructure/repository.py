@@ -115,9 +115,7 @@ class SqlAlchemyAnswerRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def upsert(
-        self, answer: Answer, *, max_submissions: int | None
-    ) -> tuple[Answer, bool]:
+    async def upsert(self, answer: Answer, *, max_submissions: int | None) -> tuple[Answer, bool]:
         result = await self._session.execute(
             build_upsert_statement(answer, max_submissions=max_submissions)
         )

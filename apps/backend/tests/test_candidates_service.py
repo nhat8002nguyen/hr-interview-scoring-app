@@ -66,9 +66,7 @@ class FakeAnswerRepository:
         self._next_id = max((answer.id for answer in self._answers.values()), default=0) + 1
         self.block_next_upsert = False
 
-    async def upsert(
-        self, answer: Answer, *, max_submissions: int | None
-    ) -> tuple[Answer, bool]:
+    async def upsert(self, answer: Answer, *, max_submissions: int | None) -> tuple[Answer, bool]:
         key = (answer.candidate_id, answer.question_id)
         existing = self._answers.get(key)
         if self.block_next_upsert:
@@ -359,9 +357,7 @@ async def test_submit_audio_at_limit_does_not_overwrite_accepted_file(tmp_path) 
         external_ref=None,
         submitted_at=datetime.now(UTC),
     )
-    service, _, _, file_storage = _answers_service(
-        tmp_path, question_ids={7}, answers=[accepted]
-    )
+    service, _, _, file_storage = _answers_service(tmp_path, question_ids={7}, answers=[accepted])
     await file_storage.save("audio/1/7.m4a", b"accepted")
 
     with pytest.raises(AttemptsExhaustedError):
@@ -390,9 +386,7 @@ async def test_submit_audio_identical_at_limit_is_noop(tmp_path) -> None:
         external_ref=None,
         submitted_at=datetime.now(UTC),
     )
-    service, _, scoring_jobs, _ = _answers_service(
-        tmp_path, question_ids={7}, answers=[accepted]
-    )
+    service, _, scoring_jobs, _ = _answers_service(tmp_path, question_ids={7}, answers=[accepted])
 
     result = await service.submit_audio(
         candidate_id=1,
@@ -423,9 +417,7 @@ async def test_submit_audio_identical_returns_post_upsert_row(tmp_path) -> None:
         external_ref=None,
         submitted_at=datetime.now(UTC),
     )
-    service, answers_repo, _, _ = _answers_service(
-        tmp_path, question_ids={7}, answers=[active]
-    )
+    service, answers_repo, _, _ = _answers_service(tmp_path, question_ids={7}, answers=[active])
     concurrent = Answer(
         id=10,
         candidate_id=1,
@@ -440,9 +432,7 @@ async def test_submit_audio_identical_returns_post_upsert_row(tmp_path) -> None:
     )
     original_get_active = answers_repo.get_active
 
-    async def get_active_then_race(
-        candidate_id: int, question_id: int
-    ) -> Answer | None:
+    async def get_active_then_race(candidate_id: int, question_id: int) -> Answer | None:
         row = await original_get_active(candidate_id, question_id)
         answers_repo._answers[(candidate_id, question_id)] = concurrent
         return row

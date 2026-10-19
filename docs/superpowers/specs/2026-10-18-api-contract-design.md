@@ -89,7 +89,7 @@ talotrace-assessment/
 | ID scheme | Integer primary keys for all entities; `session_token` is the only secret (not a primary key). |
 | Scoring queue | `scoring_jobs` table in PostgreSQL, drained by an in-process `asyncio` worker pool with `FOR UPDATE SKIP LOCKED`. |
 | LLM integration | `ScoringLlmPort` protocol + `DeepSeekLlm` adapter; config via env. Output strictly validated to `{score: int 1-4, reasoning: str}`. |
-| Audio storage | `FileStorage` abstraction, local filesystem volume in phase 1; object-storage adapter later. |
+| Audio storage | `FileStorage` abstraction, local filesystem volume in phase 1; object-storage adapter later. Candidate audio keys include the content hash (`audio/{candidate_id}/{question_id}/{content_hash}{ext}`) so a rejected changed upload cannot overwrite the accepted recording. |
 | Resubmission | One active `Answer` row per (candidate, question), with a `content_hash`. Byte-identical resubmission is an idempotent no-op; changed content increments `version` and resets the `ScoringJob` to `queued`. Exactly one score ever exists per candidate x question. Changed resubmissions are capped at `MAX_ANSWER_SUBMISSIONS` (default 3) per candidate x question; a changed submit beyond the cap returns `409`. |
 | Candidate isolation | Candidate endpoints have no cross-candidate lookups; grades and grading guides are never serialized to the candidate area. |
 
@@ -161,7 +161,7 @@ Enums:
 | question_id | int FK -> questions.id | |
 | answer_type | str | `text` \| `audio` |
 | text | text nullable | transcript for text answers |
-| audio_key | str nullable | `FileStorage` key for audio answers |
+| audio_key | str nullable | `FileStorage` key for audio answers; candidate uploads use `audio/{candidate_id}/{question_id}/{content_hash}{ext}` |
 | content_hash | str | SHA-256 hex of submitted content (UTF-8 text bytes, or audio file bytes) |
 | version | int | starts 1; increments on changed resubmit; doubles as the submission counter for the cap |
 | external_ref | str nullable indexed | data-pack `answer_id` (e.g. `"A001"`) |
@@ -298,7 +298,7 @@ Response `201` (or `200` when unchanged):
 
 `422` if `text` is empty/whitespace or `answer_type` is not `text`. `404` if `question_id` is not one of the six. `409` if the content changed and the candidate has already used `MAX_ANSWER_SUBMISSIONS` submissions for that question.
 
-`POST /candidate/interview/answers/{question_id}/audio` - Request: `multipart/form-data` with field `file` (audio). Response `201`/`200` (same shape, `answer_type: "audio"`, hash over the file bytes). `422` on missing/invalid file, `404` unknown question. `409` if the content changed and the candidate has already used `MAX_ANSWER_SUBMISSIONS` submissions for that question.
+`POST /candidate/interview/answers/{question_id}/audio` - Request: `multipart/form-data` with field `file` (audio). Response `201`/`200` (same shape, `answer_type: "audio"`, hash over the file bytes). Stored under a content-hash key so a rejected changed upload cannot overwrite the accepted recording. `422` on missing/invalid file, `404` unknown question. `409` if the content changed and the candidate has already used `MAX_ANSWER_SUBMISSIONS` submissions for that question.
 
 Resubmission semantics: submitting again for the same question upserts the single active answer. Identical content (same `content_hash`) is a no-op; changed content increments `version`, replaces content, and resets the scoring job to `queued`. The response reports `unchanged` and the current `version`.
 
@@ -527,6 +527,8 @@ Prompt-injection safety: the system prompt instructs the model that the candidat
 | Prompt-injection cannot change the score | Untrusted-text delimiters + strict output schema validation. |
 | Typed data-pack answers can be loaded and scored | `POST /hr/import` enqueues text answers for scoring. |
 | Audio answer stored and visible to HR | `answer_type=audio` + `audio_key`; `GET /hr/answers/{id}/audio` streams it. |
+| Rejected audio cannot overwrite accepted audio | Candidate audio keys include `content_hash`; at-cap changed uploads are rejected before save. |
+| HR import ignores the candidate submit cap | Import upserts with `max_submissions=None` (no `version < max_submissions` guard). |
 | App runs from README on a clean machine | `docker-compose.yml` boots Postgres + API; README documents setup/run/test (own spec section, delivered in repo). |
 
 ## 13. Testing & Verification

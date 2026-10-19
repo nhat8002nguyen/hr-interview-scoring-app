@@ -153,7 +153,7 @@ The grading guide and any score remain absent from the candidate area.
 
 - `lib/types.ts`: add `attempts_remaining` to `Question`, `max_submissions` to `InterviewResponse`, and `attempts_remaining` to `SubmitResponse`.
 - `question-card.tsx` / `answer-input.tsx`: show "N attempts remaining" and disable the submit button when the count reaches `0`, with a "No attempts remaining" message.
-- `interview-flow.tsx` already refetches the interview on "Continue", so the latest remaining count is present when a candidate revisits a question.
+- `interview-flow.tsx` treats a submit `409` as exhausted: clamp that question's displayed `attempts_remaining` to `0` and show the exhausted message. It already refetches the interview on "Continue", so the latest remaining count is present when a candidate revisits a question.
 
 ## 5. Testing
 
@@ -168,7 +168,7 @@ Backend:
 
 Frontend:
 
-- Component tests for the remaining-attempts display and the disabled-at-zero state.
+- Component tests for the remaining-attempts display, the disabled-at-zero state, and the `409` exhausted state in `interview-flow`.
 
 ## 6. Traceability
 

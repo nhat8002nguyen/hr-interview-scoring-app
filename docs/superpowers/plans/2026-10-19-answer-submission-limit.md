@@ -412,8 +412,10 @@ Expected: PASS.
 
 In `docs/superpowers/specs/2026-10-18-api-contract-design.md`:
 - Section 4 (locked decisions), resubmission row: add that changed resubmissions are capped by `MAX_ANSWER_SUBMISSIONS` (default 3) and excess changed submits return `409`.
+- Section 4 audio storage / section 6.4 `audio_key`: state that candidate audio keys include the content hash.
 - Section 6.4 (`answers`): note `version` doubles as the submission counter.
-- Section 7.2: add `attempts_remaining` and `max_submissions` to the example bodies and add the `409` case.
+- Section 7.2: add `attempts_remaining` and `max_submissions` to the example bodies and add the `409` case (text and audio).
+- Section 8 (import): state that HR import bypasses the candidate cap (`max_submissions=None`).
 - Section 11 (config): add `MAX_ANSWER_SUBMISSIONS` to the env list.
 - Section 12 (traceability): add a row mapping the submission cap to `version` plus the atomic upsert guard.
 
@@ -441,13 +443,14 @@ git commit -m "feat(api): expose answer attempts remaining and 409 on exhaustion
 - Modify: `apps/candidate-web/lib/types.ts`
 - Modify: `apps/candidate-web/components/interview/question-card.tsx`
 - Modify: `apps/candidate-web/components/interview/answer-input.tsx`
+- Modify: `apps/candidate-web/components/interview/interview-flow.tsx`
 - Test: `apps/candidate-web/tests/components/answer-input.test.tsx`
 - Test: `apps/candidate-web/tests/components/interview-flow.test.tsx`
 - Modify: `apps/candidate-web/e2e/interview.mocked.spec.ts`
 
 **Interfaces:**
 - Consumes: `Question.attempts_remaining`, `InterviewResponse.max_submissions`.
-- Produces: `AnswerInput` prop `attemptsRemaining: number`.
+- Produces: `AnswerInput` prop `attemptsRemaining: number`; `409` submit handling that clamps the question to exhausted.
 
 - [ ] **Step 1: Update the shared types and existing test fixtures**
 
@@ -538,6 +541,9 @@ In `apps/candidate-web/components/interview/answer-input.tsx`:
 
 In `apps/candidate-web/components/interview/question-card.tsx`, pass `attemptsRemaining={question.attempts_remaining}` to `AnswerInput`.
 
+In `apps/candidate-web/components/interview/interview-flow.tsx`, on submit `ApiError` with status `409`, record the question as exhausted (clamp displayed `attempts_remaining` to `0`) and show an exhausted error message instead of a generic submit failure.
+Cover with `test`/`it` that asserts a mocked `409` shows "No attempts remaining".
+
 - [ ] **Step 5: Run the frontend tests, typecheck, and lint**
 
 Run: `cd apps/candidate-web && npm test && npm run typecheck && npm run lint`
@@ -549,6 +555,7 @@ Expected: all pass.
 git add apps/candidate-web/lib/types.ts \
   apps/candidate-web/components/interview/question-card.tsx \
   apps/candidate-web/components/interview/answer-input.tsx \
+  apps/candidate-web/components/interview/interview-flow.tsx \
   apps/candidate-web/tests/components/answer-input.test.tsx \
   apps/candidate-web/tests/components/interview-flow.test.tsx \
   apps/candidate-web/e2e/interview.mocked.spec.ts

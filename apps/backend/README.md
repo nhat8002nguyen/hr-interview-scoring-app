@@ -108,6 +108,7 @@ The import is idempotent on the data pack's external refs, so re-importing does 
 | `AUDIO_STORAGE_DIR` | audio file directory | `/tmp/talotrace-audio` | `/data/audio` |
 | `SCORING_WORKERS` | worker pool size | `2` | `2` |
 | `SCORING_MAX_ATTEMPTS` | retry ceiling before `failed` | `3` | `3` |
+| `MAX_ANSWER_SUBMISSIONS` | max changed submits per candidate x question | `3` | `3` |
 | `SEED_HR_EMAIL` | seeded HR account email | `hr@talotrace.ai` | same |
 | `SEED_HR_PASSWORD` | seeded HR account password | `change-me` | same |
 

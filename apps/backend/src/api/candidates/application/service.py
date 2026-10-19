@@ -180,9 +180,7 @@ class AnswersService:
 
     async def _submit(self, answer: Answer, *, status: str) -> SubmitResult:
         async with self._uow_factory() as uow:
-            stored, changed = await uow.answers.upsert(
-                answer, max_submissions=self.max_submissions
-            )
+            stored, changed = await uow.answers.upsert(answer, max_submissions=self.max_submissions)
         if changed:
             await self._scoring_jobs.reset_for_answer(stored.id, status=status)
             return SubmitResult(status="received", unchanged=False, answer=stored)

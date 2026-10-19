@@ -44,9 +44,7 @@ from api.scoring.infrastructure.models import ScoringJobModel
 from api.scoring.infrastructure.unit_of_work import SqlAlchemyScoringUnitOfWork
 from database import Base, create_engine, create_session_factory
 
-_PACK_DIR = (
-    Path(__file__).resolve().parents[3] / "intial-resources" / "business-systems-pack"
-)
+_PACK_DIR = Path(__file__).resolve().parents[3] / "intial-resources" / "business-systems-pack"
 
 _POSTGRES_USER = "postgres"
 _POSTGRES_PASSWORD = "postgres"
@@ -366,16 +364,12 @@ async def test_answer_upsert_enforces_submission_limit(
             )
 
         async with CandidatesUnitOfWork(session_factory) as uow:
-            written, changed = await uow.answers.upsert(
-                answer("h3", "third"), max_submissions=3
-            )
+            written, changed = await uow.answers.upsert(answer("h3", "third"), max_submissions=3)
         assert changed is True
         assert written.version == 3
 
         async with CandidatesUnitOfWork(session_factory) as uow:
-            blocked, changed = await uow.answers.upsert(
-                answer("h4", "fourth"), max_submissions=3
-            )
+            blocked, changed = await uow.answers.upsert(answer("h4", "fourth"), max_submissions=3)
         assert changed is False
         assert blocked.version == 3
         assert blocked.content_hash == "h3"
@@ -391,12 +385,11 @@ async def test_answer_upsert_enforces_submission_limit(
             )
             await session.commit()
 
-        async with CandidatesUnitOfWork(session_factory) as first, CandidatesUnitOfWork(
-            session_factory
-        ) as second:
-            first_result = await first.answers.upsert(
-                answer("race3a", "a"), max_submissions=3
-            )
+        async with (
+            CandidatesUnitOfWork(session_factory) as first,
+            CandidatesUnitOfWork(session_factory) as second,
+        ):
+            first_result = await first.answers.upsert(answer("race3a", "a"), max_submissions=3)
             second_task = asyncio.create_task(
                 second.answers.upsert(answer("race3b", "b"), max_submissions=3)
             )
