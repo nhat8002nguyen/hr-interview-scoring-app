@@ -30,7 +30,7 @@ test("override a score with a reason", async ({ page }) => {
   await page.locator('a[href^="/candidates/"]').first().click();
   await page.locator('a[href^="/answers/"]').first().click();
 
-  await page.getByLabel("Score").selectOption("4");
+  await page.getByRole("combobox", { name: "Score", exact: true }).selectOption("4");
   await page.getByLabel("Reason").fill("Measured impact and a clear personal contribution.");
   await page.getByRole("button", { name: "Override score" }).click();
 
