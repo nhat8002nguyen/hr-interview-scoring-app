@@ -13,16 +13,14 @@ Add a Playwright regression test that emulates both color schemes on `/sign-in` 
 
 ## Root Cause
 
-`apps/hr-web/app/globals.css` still contains the `create-next-app` dark-mode block.
-When the browser reports `prefers-color-scheme: dark`, it sets `--foreground: #ededed`.
-Every HR primitive uses fixed light surfaces such as `bg-white`, and the sign-in labels inherit `--foreground`, so the text becomes `#ededed` on a white Card.
-`apps/candidate-web/app/globals.css` already removed this block and declares `color-scheme: light`, so the HR app is the outlier.
+`apps/hr-web/app/globals.css` contained the leftover `create-next-app` dark-mode block.
+When the browser reported `prefers-color-scheme: dark`, it set `--foreground: #ededed`.
+Every HR primitive uses fixed light surfaces such as `bg-white`, and the sign-in labels inherit `--foreground`, so the text became `#ededed` on a white Card.
+`apps/candidate-web/app/globals.css` already removed this block and declares `color-scheme: light`, so the HR app was the outlier.
 
 ## Global Constraints
 
-- The HR UI is light-only: no `dark:` variants, theme toggle, or per-component color overrides.
-- The light palette is `--background: #ffffff` and `--foreground: #171717`.
-- `color-scheme: light` must be declared on `:root` so native inputs and autofill render light.
+- Light-only palette and `color-scheme: light` live in the Locked Decisions (Styling) of `docs/superpowers/specs/2026-10-18-hr-web-design.md`.
 - Do not modify `apps/candidate-web`.
 - Do not add any dependencies.
 
@@ -45,7 +43,7 @@ Every HR primitive uses fixed light surfaces such as `bg-white`, and the sign-in
 - Consumes: the existing `/sign-in` markup, where `main > div` is the Card, and the heading, label, and input elements are the first `h1`, `label span`, and `input` in the document.
 - Produces: a document-level `color-scheme: light` contract for every HR page; no runtime API changes.
 
-- [ ] **Step 1: Write the failing Playwright test**
+- [x] **Step 1: Write the failing Playwright test**
 
 Create `apps/hr-web/e2e/sign-in-theme.spec.ts`:
 
@@ -88,7 +86,7 @@ for (const colorScheme of ["light", "dark"] as const) {
 }
 ```
 
-- [ ] **Step 2: Run the dark case to verify it fails**
+- [x] **Step 2: Run the dark case to verify it fails**
 
 Run from `apps/hr-web`:
 
@@ -101,7 +99,7 @@ The received values include `bodyBackground: "rgb(10, 10, 10)"`, `bodyColor: "rg
 
 If Chromium is missing, run `npx playwright install chromium` once and repeat.
 
-- [ ] **Step 3: Remove the automatic dark palette and lock the document to light**
+- [x] **Step 3: Remove the automatic dark palette and lock the document to light**
 
 In `apps/hr-web/app/globals.css`, add `color-scheme: light;` as the first declaration in `:root`, and delete the entire `@media (prefers-color-scheme: dark)` block.
 The resulting root and body rules must be:
@@ -129,7 +127,7 @@ body {
 
 Do not change the font declaration or any component classes.
 
-- [ ] **Step 4: Run the regression test to verify both schemes pass**
+- [x] **Step 4: Run the regression test to verify both schemes pass**
 
 Run from `apps/hr-web`:
 
@@ -139,7 +137,7 @@ npx playwright test e2e/sign-in-theme.spec.ts
 
 Expected: `2 passed`.
 
-- [ ] **Step 5: Run the existing unit suite**
+- [x] **Step 5: Run the existing unit suite**
 
 Run from `apps/hr-web`:
 
@@ -149,7 +147,7 @@ npm test
 
 Expected: all Vitest tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/hr-web/app/globals.css apps/hr-web/e2e/sign-in-theme.spec.ts
