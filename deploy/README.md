@@ -15,6 +15,7 @@ This stack does not publish ports 80 or 443.
 `edge-init.sh` writes `/opt/type-by-voice/deploy/docker-compose.override.yml` so the existing nginx joins `talot-edge`.
 It also writes the ACME bootstrap site and issues the certificate through the existing certbot service.
 The existing certbot renewal loop renews the new certificate automatically.
+`edge-init.sh` clears the certbot entrypoint to run a one-shot `certbot certonly`, so it assumes the shared service uses the stock `certbot/certbot` image.
 
 ## DNS
 
@@ -77,7 +78,15 @@ For a manual deploy:
 IMAGE_TAG=<sha-or-latest> GHCR_OWNER=nhat8002nguyen ./scripts/deploy.sh
 ```
 
+The inline `IMAGE_TAG` and `GHCR_OWNER` override the values in `.env`, so a rollback can pin a SHA without editing the file.
+
 The script pulls the image, starts `api-db`, `migrate`, and `api`, waits for `/health`, connects nginx to `talot-edge` if needed, installs the TLS site, and reloads nginx.
+
+## Downtime
+
+A deploy recreates `migrate` and `api` on this single host.
+Expect a brief API outage from the moment the old `api` container stops until the new one passes `/health`.
+This is accepted for phase 1; a second host or a blue/green flow is phase 2.
 
 If the GHCR package is private and the host login is stale:
 
@@ -109,6 +118,22 @@ From the repository root, run the production smoke:
 
 Set `IMAGE_TAG` to the previous known-good SHA and run `./scripts/deploy.sh`.
 The database volume is not touched.
+
+## Vercel follow-ups
+
+The two Vercel projects are live and were deployed from the CLI:
+
+- `talot-candidate-web` -> https://talot-candidate-web.vercel.app
+- `talot-hr-web` -> https://talot-hr-web.vercel.app
+
+Git auto-deploy is not connected yet because the Vercel GitHub app is not installed on the private repository.
+When enabling Git deploys:
+
+1. Install the Vercel GitHub app for `nhat8002nguyen/talot-assessment`.
+2. Connect the repository to both projects.
+3. Set each project's Root Directory to `apps/candidate-web` and `apps/hr-web`.
+   The directories are currently empty because CLI deploys from each app folder do not need them.
+4. Set `NEXT_PUBLIC_API_URL=https://talot-api.nate-ng.com` for Production and Preview.
 
 ## Security notes
 

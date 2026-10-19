@@ -2,11 +2,21 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+image_tag_override="${IMAGE_TAG:-}"
+ghcr_owner_override="${GHCR_OWNER:-}"
+
 if [[ -f .env ]]; then
   set -a
   # shellcheck disable=SC1091
   source .env
   set +a
+fi
+
+if [[ -n "$image_tag_override" ]]; then
+  IMAGE_TAG="$image_tag_override"
+fi
+if [[ -n "$ghcr_owner_override" ]]; then
+  GHCR_OWNER="$ghcr_owner_override"
 fi
 
 : "${IMAGE_TAG:?IMAGE_TAG required}"
