@@ -290,7 +290,9 @@ async def test_import_and_score_end_to_end(
 
         # A duplicate byte-identical submission must be a no-op: the answer keeps
         # its version and the already-scored job is not re-queued.
-        existing = await answers.get_by_external_ref("A001")
+        candidate = await candidates.get_by_external_ref(owner_id, "C2041")
+        assert candidate is not None
+        existing = await answers.get_by_external_ref(candidate.id, "A001")
         assert existing is not None and existing.answer_type == "text"
         assert existing.text is not None
         before_version = existing.version

@@ -34,9 +34,9 @@ class ScoringService:
             raise ScoringJobNotFoundError(answer_id)
         return job
 
-    async def list_jobs(self, status: str | None) -> list[ScoringJobSummary]:
+    async def list_jobs(self, status: str | None, owner_id: int) -> list[ScoringJobSummary]:
         async with self._uow_factory() as uow:
-            return await uow.scoring_jobs.list(status)
+            return await uow.scoring_jobs.list(status, owner_id)
 
     async def override_score(
         self,
@@ -66,9 +66,9 @@ class ScoringService:
                 now=datetime.now(UTC),
             )
 
-    async def retry(self, job_id: int) -> ScoringJob:
+    async def retry(self, job_id: int, owner_id: int) -> ScoringJob:
         async with self._uow_factory() as uow:
-            job = await uow.scoring_jobs.get(job_id)
+            job = await uow.scoring_jobs.get_owned(job_id, owner_id)
             if job is None:
                 raise ScoringJobNotFoundError(job_id)
             if job.status != "failed":

@@ -83,13 +83,13 @@ async def override_answer_score(
     answers: AnswersServiceDep,
     catalog: CatalogServiceDep,
 ) -> AnswerDetailResponse:
+    answer = await answers.get_owned(answer_id, user.sub)
     job = await scoring.override_score(
         answer_id,
         final_score=body.final_score,
         override_reason=body.override_reason,
         overridden_by=user.sub,
     )
-    answer = await answers.get(answer_id)
     question = await catalog.get_question(answer.question_id)
     return AnswerDetailResponse(
         id=answer.id,
@@ -113,9 +113,10 @@ async def override_answer_score(
 )
 async def list_scoring_jobs(
     scoring: ScoringServiceDep,
+    user: CurrentUserDep,
     status: _ScoringStatus | None = None,
 ) -> list[ScoringJobSummaryResponse]:
-    jobs = await scoring.list_jobs(status)
+    jobs = await scoring.list_jobs(status, owner_id=user.sub)
     return [_summary_response(job) for job in jobs]
 
 
@@ -127,6 +128,7 @@ async def list_scoring_jobs(
 async def retry_scoring_job(
     job_id: int,
     scoring: ScoringServiceDep,
+    user: CurrentUserDep,
 ) -> ScoringJobResponse:
-    job = await scoring.retry(job_id)
+    job = await scoring.retry(job_id, owner_id=user.sub)
     return _job_response(job)

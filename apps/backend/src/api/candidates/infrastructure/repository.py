@@ -160,9 +160,12 @@ class SqlAlchemyAnswerRepository:
         )
         return [self._to_answer(row) for row in rows]
 
-    async def get_by_external_ref(self, external_ref: str) -> Answer | None:
+    async def get_by_external_ref(self, candidate_id: int, external_ref: str) -> Answer | None:
         row = await self._session.scalar(
-            select(AnswerModel).where(AnswerModel.external_ref == external_ref)
+            select(AnswerModel).where(
+                AnswerModel.candidate_id == candidate_id,
+                AnswerModel.external_ref == external_ref,
+            )
         )
         return None if row is None else self._to_answer(row)
 

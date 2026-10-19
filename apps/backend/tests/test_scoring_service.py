@@ -41,18 +41,33 @@ def _job(
 
 
 class FakeScoringJobRepository:
-    def __init__(self, jobs: list[ScoringJob] | None = None) -> None:
+    def __init__(
+        self,
+        jobs: list[ScoringJob] | None = None,
+        *,
+        owners: dict[int, int] | None = None,
+    ) -> None:
         self._jobs: dict[int, ScoringJob] = {job.id: job for job in jobs or []}
         self._by_answer: dict[int, ScoringJob] = {
             job.answer_id: job for job in jobs or []
         }
+        self._owners = owners or {}
         self._next_id = max(self._jobs, default=0) + 1
         self.upsert_calls: list[tuple[int, str]] = []
         self.set_override_calls: list[tuple] = []
         self.mark_retried_calls: list[tuple[int, datetime]] = []
+        self.list_calls: list[tuple[str | None, int]] = []
 
     async def get(self, job_id: int) -> ScoringJob | None:
         return self._jobs.get(job_id)
+
+    async def get_owned(self, job_id: int, owner_id: int) -> ScoringJob | None:
+        job = self._jobs.get(job_id)
+        if job is None:
+            return None
+        if job_id in self._owners and self._owners[job_id] != owner_id:
+            return None
+        return job
 
     async def get_by_answer(self, answer_id: int) -> ScoringJob | None:
         return self._by_answer.get(answer_id)
@@ -112,7 +127,8 @@ class FakeScoringJobRepository:
         self._by_answer[updated.answer_id] = updated
         return updated
 
-    async def list(self, status: str | None) -> list:
+    async def list(self, status: str | None, owner_id: int) -> list:
+        self.list_calls.append((status, owner_id))
         return []
 
     async def claim_next_queued(self, now: datetime) -> ScoringJob | None:
@@ -185,7 +201,7 @@ async def test_retry_only_failed() -> None:
     repo = FakeScoringJobRepository([_job(1, 100, "failed", attempt_count=1)])
     service = _service(repo)
 
-    result = await service.retry(1)
+    result = await service.retry(1, owner_id=1)
 
     assert result.status == "queued"
     assert result.attempt_count == 2
@@ -195,7 +211,30 @@ async def test_retry_only_failed() -> None:
     scored_service = _service(scored_repo)
 
     with pytest.raises(ScoringJobInvalidTransitionError):
-        await scored_service.retry(2)
+        await scored_service.retry(2, owner_id=1)
+
+
+async def test_retry_cross_tenant_raises_not_found() -> None:
+    repo = FakeScoringJobRepository(
+        [_job(1, 100, "failed", attempt_count=1)],
+        owners={1: 2},
+    )
+    service = _service(repo)
+
+    with pytest.raises(ScoringJobNotFoundError):
+        await service.retry(1, owner_id=1)
+
+    assert repo.mark_retried_calls == []
+
+
+async def test_list_jobs_scopes_by_owner() -> None:
+    repo = FakeScoringJobRepository()
+    service = _service(repo)
+
+    result = await service.list_jobs("failed", owner_id=1)
+
+    assert result == []
+    assert repo.list_calls == [("failed", 1)]
 
 
 async def test_reset_for_answer_upserts() -> None:

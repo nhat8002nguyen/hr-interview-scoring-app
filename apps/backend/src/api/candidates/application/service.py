@@ -201,9 +201,9 @@ class AnswersService:
         async with self._uow_factory() as uow:
             return await uow.answers.list_for_candidate(candidate_id)
 
-    async def get_by_external_ref(self, ref: str) -> Answer | None:
+    async def get_by_external_ref(self, candidate_id: int, external_ref: str) -> Answer | None:
         async with self._uow_factory() as uow:
-            return await uow.answers.get_by_external_ref(ref)
+            return await uow.answers.get_by_external_ref(candidate_id, external_ref)
 
     async def get_active(self, candidate_id: int, question_id: int) -> Answer | None:
         async with self._uow_factory() as uow:
@@ -213,6 +213,16 @@ class AnswersService:
         async with self._uow_factory() as uow:
             answer = await uow.answers.get(answer_id)
         if answer is None:
+            raise AnswerNotFoundError(answer_id)
+        return answer
+
+    async def get_owned(self, answer_id: int, owner_id: int) -> Answer:
+        async with self._uow_factory() as uow:
+            answer = await uow.answers.get(answer_id)
+            if answer is None:
+                raise AnswerNotFoundError(answer_id)
+            candidate = await uow.candidates.get(answer.candidate_id)
+        if candidate is None or candidate.owner_id != owner_id:
             raise AnswerNotFoundError(answer_id)
         return answer
 

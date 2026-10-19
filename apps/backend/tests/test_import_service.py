@@ -160,10 +160,11 @@ class FakeCatalogService:
 class FakeCandidatesService:
     def __init__(self) -> None:
         self.candidates: dict[str, Candidate] = {}
+        self._by_owner_ref: dict[tuple[int, str], Candidate] = {}
         self._next_id = 1
 
     async def get_by_external_ref(self, owner_id: int, ref: str) -> Candidate | None:
-        return self.candidates.get(ref)
+        return self._by_owner_ref.get((owner_id, ref))
 
     async def create_candidate(
         self,
@@ -186,17 +187,20 @@ class FakeCandidatesService:
         )
         self._next_id += 1
         self.candidates[external_ref] = candidate
+        if external_ref is not None:
+            self._by_owner_ref[(owner_id, external_ref)] = candidate
         return candidate
 
 
 class FakeAnswersService:
     def __init__(self) -> None:
         self.answers: dict[str, Answer] = {}
+        self._by_candidate_ref: dict[tuple[int, str], Answer] = {}
         self._by_key: dict[tuple[int, int], Answer] = {}
         self._next_id = 1
 
-    async def get_by_external_ref(self, ref: str) -> Answer | None:
-        return self.answers.get(ref)
+    async def get_by_external_ref(self, candidate_id: int, ref: str) -> Answer | None:
+        return self._by_candidate_ref.get((candidate_id, ref))
 
     async def import_answer(
         self,
@@ -229,6 +233,7 @@ class FakeAnswersService:
             self._by_key[key] = answer
             if external_ref is not None:
                 self.answers[external_ref] = answer
+                self._by_candidate_ref[(candidate_id, external_ref)] = answer
             return answer, True
         if existing.content_hash == content_hash:
             return existing, False
@@ -375,6 +380,29 @@ async def test_import_is_idempotent_on_external_ref() -> None:
     assert len(candidates.candidates) == 2
     assert len(answers.answers) == 2
     assert file_storage.save_calls.count("audio/import/A034.m4a") == 1
+
+
+async def test_import_same_pack_two_owners_isolated() -> None:
+    service, _, candidates, answers, _ = _service()
+
+    first = await service.import_zip(_pack(include_answers=True), owner_id=1)
+    second = await service.import_zip(_pack(include_answers=True), owner_id=2)
+
+    assert first.candidates_created == 2
+    assert first.answers_imported == 2
+    assert second.candidates_created == 2
+    assert second.answers_imported == 2
+
+    owner_one = await candidates.get_by_external_ref(1, "C2041")
+    owner_two = await candidates.get_by_external_ref(2, "C2041")
+    assert owner_one is not None and owner_one.owner_id == 1
+    assert owner_two is not None and owner_two.owner_id == 2
+    assert owner_one.id != owner_two.id
+
+    answer_one = await answers.get_by_external_ref(owner_one.id, "A001")
+    answer_two = await answers.get_by_external_ref(owner_two.id, "A001")
+    assert answer_one is not None and answer_one.candidate_id == owner_one.id
+    assert answer_two is not None and answer_two.candidate_id == owner_two.id
 
 
 def _retake_pack() -> bytes:

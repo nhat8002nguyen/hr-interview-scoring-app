@@ -205,11 +205,12 @@ async def create_candidate(
 )
 async def get_answer_detail(
     answer_id: int,
+    user: CurrentUserDep,
     answers: AnswersServiceDep,
     catalog: CatalogServiceDep,
     scoring: ScoringReaderDep,
 ) -> AnswerDetailResponse:
-    answer = await answers.get(answer_id)
+    answer = await answers.get_owned(answer_id, user.sub)
     question = await catalog.get_question(answer.question_id)
     snapshot = await scoring.get_snapshot(answer.id)
     return AnswerDetailResponse(
@@ -233,7 +234,9 @@ async def get_answer_detail(
 )
 async def get_answer_audio(
     answer_id: int,
+    user: CurrentUserDep,
     answers: AnswersServiceDep,
 ) -> Response:
+    await answers.get_owned(answer_id, user.sub)
     data, media_type = await answers.read_audio(answer_id)
     return Response(content=data, media_type=media_type)

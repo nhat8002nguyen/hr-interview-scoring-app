@@ -88,16 +88,22 @@ class FakeAnswersService:
         self,
         answers: list[Answer] | None = None,
         audio: dict[int, tuple[bytes, str]] | None = None,
+        *,
+        owners: dict[int, int] | None = None,
     ) -> None:
         self._answers = {answer.id: answer for answer in answers or []}
         self._audio = audio or {}
+        self._owners = owners or {}
 
     async def list_for_candidate(self, candidate_id: int) -> list[Answer]:
         return [a for a in self._answers.values() if a.candidate_id == candidate_id]
 
-    async def get(self, answer_id: int) -> Answer:
+    async def get_owned(self, answer_id: int, owner_id: int) -> Answer:
         answer = self._answers.get(answer_id)
         if answer is None:
+            raise AnswerNotFoundError(answer_id)
+        candidate_owner = self._owners.get(answer.candidate_id)
+        if candidate_owner is None or candidate_owner != owner_id:
             raise AnswerNotFoundError(answer_id)
         return answer
 
@@ -407,7 +413,7 @@ async def test_get_answer_detail_has_grading_guide() -> None:
     answer = _answer(31, 12, 1)
     app, jwt_service = _app(
         FakeCandidatesService([]),
-        FakeAnswersService(answers=[answer]),
+        FakeAnswersService(answers=[answer], owners={12: 1}),
         FakeCatalogService([QUESTION_1, QUESTION_2]),
         FakeScoringReader({31: _snapshot()}),
     )
@@ -452,6 +458,7 @@ async def test_get_audio_streams() -> None:
         FakeAnswersService(
             answers=[audio_answer, text_answer],
             audio={5: (b"\x00\x01audio", "audio/mp4")},
+            owners={12: 1},
         ),
         FakeCatalogService([QUESTION_1, QUESTION_2]),
         FakeScoringReader(),
@@ -476,6 +483,25 @@ async def test_get_audio_streams() -> None:
     assert body["type"] == "about:blank"
     assert body["title"] == "Not Found"
     assert body["status"] == 404
+
+
+async def test_cross_tenant_answer_detail_is_404() -> None:
+    answer = _answer(31, 12, 1)
+    app, jwt_service = _app(
+        FakeCandidatesService([]),
+        FakeAnswersService(answers=[answer], owners={12: 2}),
+        FakeCatalogService([QUESTION_1, QUESTION_2]),
+        FakeScoringReader(),
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/hr/answers/31",
+            headers=_headers(jwt_service),
+        )
+
+    assert response.status_code == 404
+    assert response.json()["title"] == "Not Found"
 
 
 async def test_hr_requires_authentication() -> None:

@@ -89,6 +89,7 @@ def build_load_scoring_input_statement(
 
 def build_list_statement(
     status: str | None,
+    owner_id: int,
 ) -> Select[int, int, int, str | None, str, str, int, str | None, datetime]:
     statement = (
         select(
@@ -106,6 +107,7 @@ def build_list_statement(
         .join(AnswerModel, ScoringJobModel.answer_id == AnswerModel.id)
         .join(CandidateModel, AnswerModel.candidate_id == CandidateModel.id)
         .join(QuestionModel, AnswerModel.question_id == QuestionModel.id)
+        .where(CandidateModel.owner_id == owner_id)
     )
     if status is not None:
         statement = statement.where(ScoringJobModel.status == status)
@@ -118,6 +120,15 @@ class SqlAlchemyScoringJobRepository:
 
     async def get(self, job_id: int) -> ScoringJob | None:
         row = await self._session.get(ScoringJobModel, job_id)
+        return None if row is None else self._to_job(row)
+
+    async def get_owned(self, job_id: int, owner_id: int) -> ScoringJob | None:
+        row = await self._session.scalar(
+            select(ScoringJobModel)
+            .join(AnswerModel, ScoringJobModel.answer_id == AnswerModel.id)
+            .join(CandidateModel, AnswerModel.candidate_id == CandidateModel.id)
+            .where(ScoringJobModel.id == job_id, CandidateModel.owner_id == owner_id)
+        )
         return None if row is None else self._to_job(row)
 
     async def get_by_answer(self, answer_id: int) -> ScoringJob | None:
@@ -236,8 +247,8 @@ class SqlAlchemyScoringJobRepository:
             raise ScoringJobNotFoundError(job_id)
         return self._to_job(row)
 
-    async def list(self, status: str | None) -> list[ScoringJobSummary]:
-        rows = (await self._session.execute(build_list_statement(status))).all()
+    async def list(self, status: str | None, owner_id: int) -> list[ScoringJobSummary]:
+        rows = (await self._session.execute(build_list_statement(status, owner_id))).all()
         return [
             ScoringJobSummary(
                 id=row.id,

@@ -142,9 +142,13 @@ class FakeAnswerRepository:
     async def list_for_candidate(self, candidate_id: int) -> list[Answer]:
         return [a for a in self._answers.values() if a.candidate_id == candidate_id]
 
-    async def get_by_external_ref(self, external_ref: str) -> Answer | None:
+    async def get_by_external_ref(self, candidate_id: int, external_ref: str) -> Answer | None:
         return next(
-            (a for a in self._answers.values() if a.external_ref == external_ref),
+            (
+                a
+                for a in self._answers.values()
+                if a.candidate_id == candidate_id and a.external_ref == external_ref
+            ),
             None,
         )
 

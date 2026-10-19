@@ -263,7 +263,7 @@ class ImportService:
             audio_file = payload.get("audio_file")
 
             if isinstance(transcript, str):
-                if await self._answers.get_by_external_ref(answer_id) is not None:
+                if await self._answers.get_by_external_ref(candidate.id, answer_id) is not None:
                     continue
                 _, changed = await self._answers.import_answer(
                     candidate.id,
@@ -279,7 +279,7 @@ class ImportService:
                     answers_imported += 1
                     scoring_jobs_queued += 1
             elif transcript is None and audio_file and record.audio_bytes is not None:
-                if await self._answers.get_by_external_ref(answer_id) is not None:
+                if await self._answers.get_by_external_ref(candidate.id, answer_id) is not None:
                     continue
                 key = f"audio/import/{answer_id}.m4a"
                 await self._file_storage.save(key, record.audio_bytes)
