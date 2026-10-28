@@ -1,9 +1,9 @@
-# Talotrace Interview Scoring - Backend Service Design
+# Interview Scoring - Backend Service Design
 
 **Date:** 2026-10-18
 **Status:** Accepted
 **Source of truth:** `docs/superpowers/specs/2026-10-18-api-contract-design.md`
-**Repo:** `talot-backend` (sibling git repo to `talot-candidate-web` and `talot-hr-web`)
+**Repo:** `apps/backend` in this monorepo
 **Runtime:** Python 3.14 + FastAPI
 **Database:** PostgreSQL 18
 **LLM:** DeepSeek (adapter-swappable)
@@ -34,8 +34,8 @@ Out of scope (phase 2, unchanged from the contract): audio transcription/scoring
 | Template source | `initial-resources/fastapi-microservices/apps/virtual-facility` plus `libs/database` and `libs/iam` |
 | Kept libraries | `database`, `iam` only |
 | Dropped | `messaging`, `outbox`, `inbox`, `tracing`, NATS, RabbitMQ, `workflows-service`, `contracts` |
-| Layout | `uv` workspace under `talot-backend/` with `libs/database`, `libs/iam`, and `apps/api` |
-| App package | `api` (import path `api.main:app`, FastAPI title "talotrace-api") |
+| Layout | `uv` workspace under `apps/backend/` with `libs/database`, `libs/iam`, and `apps/api` |
+| App package | `api` (import path `api.main:app`, FastAPI title "interview-scoring-api") |
 | API style | JSON over HTTP, resource-oriented REST, no version prefix in phase 1 |
 | Error format | RFC 7807 Problem Details (`{"type","title","status","detail"}`) |
 | HR auth | Bearer JWT via `libs/iam`, role `hr`, seeded HR account plus self-service sign-up |
@@ -50,7 +50,7 @@ Out of scope (phase 2, unchanged from the contract): audio transcription/scoring
 ## 4. Package Layout
 
 ```text
-talot-backend/
+apps/backend/
 ├── pyproject.toml          # uv workspace root; members: libs/database, libs/iam, apps/api
 ├── uv.lock
 ├── Dockerfile.dev
@@ -430,7 +430,7 @@ Unreadable zip or unexpected layout returns `400`; oversized files return `413`.
 
 | Env var | Default | Notes |
 |---|---|---|
-| `database_url` | `postgresql+asyncpg://postgres:postgres@api-db:5432/talotrace` | |
+| `database_url` | `postgresql+asyncpg://postgres:postgres@api-db:5432/interview` | |
 | `candidate_web_origin` | - | builds the interview link |
 | `cors_origins` | `[]` | the two FE origins |
 | `scoring_workers` | `2` | worker pool size |
@@ -439,8 +439,8 @@ Unreadable zip or unexpected layout returns `400`; oversized files return `413`.
 | `deepseek_api_key` | - | |
 | `deepseek_model` | `deepseek-chat` | |
 | `deepseek_base_url` | `https://api.deepseek.com` | |
-| `audio_storage_dir` | `/tmp/talotrace-audio` | local volume in phase 1 |
-| `seed_hr_email` | `hr@talotrace.ai` | |
+| `audio_storage_dir` | `/tmp/interview-audio` | local volume in phase 1 |
+| `seed_hr_email` | `hr@example.com` | |
 | `seed_hr_password` | - | required to seed the HR account |
 | `password_min_length` | `8` | minimum sign-up password length (enforced in the service) |
 | `auth_rate_limit` | `60` | max sign-in/sign-up requests per window |

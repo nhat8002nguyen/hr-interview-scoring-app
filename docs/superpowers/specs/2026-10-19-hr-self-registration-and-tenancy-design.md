@@ -1,4 +1,4 @@
-# Talotrace Interview Scoring - HR Self-Registration and Tenancy Design
+# Interview Scoring - HR Self-Registration and Tenancy Design
 
 **Date:** 2026-10-19
 **Status:** Accepted

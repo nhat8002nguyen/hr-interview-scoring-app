@@ -35,7 +35,7 @@ The failure modes below are implied by the spec but easy to leave untested. Each
 ## File Structure
 
 ```text
-talot-candidate-web/
+apps/candidate-web/
 ├── app/
 │   ├── layout.tsx                  # root layout, metadata, globals import
 │   ├── page.tsx                    # fallback: "Open the interview link you were sent"
@@ -369,14 +369,14 @@ it("shows invalid-link on a 401", async () => {
 });
 
 it("resumes at the stored question index", async () => {
-  localStorage.setItem("talotrace:interview:tok:currentQuestion", "2");
+  localStorage.setItem("interview:tok:currentQuestion", "2");
   (getInterview as any).mockResolvedValue(interview());
   render(<InterviewFlow token="tok" />);
   expect(await screen.findByText("Question 3 of 6")).toBeInTheDocument();
 });
 
 it("falls back to the first unanswered question when stored index is malformed", async () => {
-  localStorage.setItem("talotrace:interview:tok:currentQuestion", "abc");
+  localStorage.setItem("interview:tok:currentQuestion", "abc");
   (getInterview as any).mockResolvedValue(interviewWithFirstAnswered());
   render(<InterviewFlow token="tok" />);
   expect(await screen.findByText("Question 2 of 6")).toBeInTheDocument();
@@ -423,7 +423,7 @@ Expected: FAIL - `Cannot find module '@/components/interview/interview-flow'`
 
 State: `phase: "loading" | "invalid-link" | "error" | "ready" | "complete"`, `interview: InterviewResponse | null`, `currentIndex: number`, `submit: "idle" | "submitting" | "received" | "error"`, `submitError: string | null`, `lastUnchanged: boolean`.
 
-On mount, call `getInterview(token)`; on `ApiError` with `status === 401` set `phase = "invalid-link"`, on other failure set `phase = "error"`, on success resolve the start index per §7.1 of the spec (stored valid index wins; else first `answer === null`; if all answered and nothing stored, `phase = "complete"`). Persist `currentIndex` to `localStorage` under `talotrace:interview:${token}:currentQuestion` on every change.
+On mount, call `getInterview(token)`; on `ApiError` with `status === 401` set `phase = "invalid-link"`, on other failure set `phase = "error"`, on success resolve the start index per §7.1 of the spec (stored valid index wins; else first `answer === null`; if all answered and nothing stored, `phase = "complete"`). Persist `currentIndex` to `localStorage` under `interview:${token}:currentQuestion` on every change.
 
 `handleSubmitText(text)` and `handleSubmitAudio(file)` call the matching `lib/api` function with `interview.questions[currentIndex].id`, set `submit = "submitting"`, then `"received"` on success (recording `res.unchanged` in `lastUnchanged`) or `"error"` with `submitError` on failure.
 

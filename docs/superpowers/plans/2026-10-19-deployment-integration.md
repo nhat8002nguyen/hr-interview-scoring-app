@@ -1,4 +1,4 @@
-# Talotrace Deployment & Integration Implementation Plan
+# Deployment & Integration Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task.
 > Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -7,7 +7,7 @@
 
 **Architecture:** Local Compose builds all three apps on ports 3000, 3001, and 3002.
 Production runs only `api`, `api-db`, and `migrate` in `/opt/talot-assessment`.
-The existing `type-by-voice` nginx joins a shared `talot-edge` Docker network and terminates TLS for `talot-api.nate-ng.com`, so the talot stack never binds ports 80 or 443.
+The existing `type-by-voice` nginx joins a shared `talot-edge` Docker network and terminates TLS for `talot-api.nate-ng.com`, so the API stack never binds ports 80 or 443.
 GitHub Actions builds `ghcr.io/nhat8002nguyen/talot-api` and SSH-redeploys the host.
 Vercel builds each Next.js app with `NEXT_PUBLIC_API_URL`.
 
@@ -32,7 +32,7 @@ Vercel builds each Next.js app with `NEXT_PUBLIC_API_URL`.
 - Audio files live on the `audio-data` volume mounted at `/data/audio`.
 - PostgreSQL 18 uses the volume mount `/var/lib/postgresql`, not `/var/lib/postgresql/data`.
 - The existing `type-by-voice` stack must keep serving `https://tbv-api.nate-ng.com` throughout.
-- Talot production Compose must not declare host ports 80 or 443.
+- Production Compose must not declare host ports 80 or 443.
 - Do not use em dashes in repository text; use plain hyphens.
 
 ## Inputs Required Before Production Deploy
@@ -154,7 +154,7 @@ Create `scripts/smoke-local.sh` that asserts:
 2. `http://localhost:3000/health` returns 200.
 3. `http://localhost:3001/` returns 200.
 4. `http://localhost:3002/sign-in` returns 200.
-5. `POST http://localhost:3002/api/auth/sign-in` with `{"email":"hr@talotrace.ai","password":"change-me"}` returns 200 and a `Set-Cookie: hr_access=` header.
+5. `POST http://localhost:3002/api/auth/sign-in` with `{"email":"hr@example.com","password":"change-me"}` returns 200 and a `Set-Cookie: hr_access=` header.
 6. `OPTIONS http://localhost:3000/candidate/interview` with `Origin: http://localhost:3001` and `Access-Control-Request-Headers: x-candidate-token` returns `Access-Control-Allow-Origin: http://localhost:3001`.
 
 Use a retry loop of up to 120 seconds for the HTTP checks because the API takes about 10 seconds to become ready.
@@ -267,7 +267,7 @@ Run it and verify with `unzip -l` that the zip contains `questions.md`, `pipelin
 - [ ] **Step 2: Write the integration smoke**
 
 Create `scripts/smoke_integration.py` using `httpx`.
-Use a unique email such as `smoke+<unix-timestamp>@talotrace.ai` for each run.
+Use a unique email such as `smoke+<unix-timestamp>@example.com` for each run.
 
 The script must assert:
 
@@ -348,7 +348,7 @@ GHCR_OWNER=nhat8002nguyen
 POSTGRES_USER=talot
 POSTGRES_PASSWORD=REPLACE_WITH_LONG_RANDOM
 JWT_SECRET=REPLACE_WITH_64_HEX_CHARS
-SEED_HR_EMAIL=hr@talotrace.ai
+SEED_HR_EMAIL=hr@example.com
 SEED_HR_PASSWORD=REPLACE_WITH_LONG_RANDOM
 CORS_ORIGINS=https://talot-candidate-web.vercel.app,https://talot-hr-web.vercel.app
 CANDIDATE_WEB_ORIGIN=https://talot-candidate-web.vercel.app
@@ -653,7 +653,7 @@ SSHPASS="$VPS_PASSWORD" sshpass -e ssh \
 ```
 
 Expected: certbot reports `Successfully received certificate` for `talot-api.nate-ng.com`.
-A non-zero exit after certificate issuance is acceptable if nginx cannot validate the upstream before the talot stack exists.
+A non-zero exit after certificate issuance is acceptable if nginx cannot validate the upstream before the API stack exists.
 
 - [ ] **Step 6: Verify the certificate and the existing service**
 

@@ -1,4 +1,4 @@
-# Talotrace Interview Scoring - API Contract Design
+# Interview Scoring - API Contract Design
 
 **Date:** 2026-10-18
 **Status:** Accepted
@@ -66,7 +66,7 @@ The product: an internal interview-scoring app where candidates answer six quest
 ### 3.1 Monorepo layout
 
 ```text
-talotrace-assessment/
+.
 ├── apps/
 │   ├── candidate-web/        # Next.js 16 app router - candidate area
 │   ├── hr-web/               # Next.js 16 app router - HR area
@@ -233,13 +233,13 @@ Conventions:
 
 Request:
 ```json
-{ "email": "hr@talotrace.ai", "password": "..." }
+{ "email": "hr@example.com", "password": "..." }
 ```
 
 Response `200`:
 ```json
 {
-  "user": { "id": 1, "email": "hr@talotrace.ai", "role": "hr" },
+  "user": { "id": 1, "email": "hr@example.com", "role": "hr" },
   "access_token": "<jwt>",
   "refresh_token": "<jwt>"
 }

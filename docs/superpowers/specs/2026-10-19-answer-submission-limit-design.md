@@ -1,4 +1,4 @@
-# Talotrace Interview Scoring - Answer Submission Limit Design
+# Interview Scoring - Answer Submission Limit Design
 
 **Date:** 2026-10-19
 **Status:** Accepted

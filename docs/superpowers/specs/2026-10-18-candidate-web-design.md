@@ -1,8 +1,8 @@
-# Talotrace Candidate Web - Design Spec
+# Candidate Web Design
 
 **Date:** 2026-10-18
 **Status:** Accepted
-**App:** `talot-candidate-web` (Next.js 16 App Router)
+**App:** `apps/candidate-web` (Next.js 16 App Router)
 **Depends on:** `docs/superpowers/specs/2026-10-18-api-contract-design.md` (Accepted)
 **Sibling specs:** Frontend - HR area, Backend service
 
@@ -39,7 +39,7 @@ It talks to the FastAPI monolith (`apps/api`) over JSON HTTP.
 
 ```text
   candidate link  ---> +--------------------------+
-  /interview/{token}   | talot-candidate-web       |--\
+  /interview/{token}   | apps/candidate-web        |--\
   (unauthenticated)    | Next.js 16 App Router     |   \  X-Candidate-Token
                        +---------------------------+    \      |
                                                          +-----v-----------+
@@ -124,7 +124,7 @@ State held:
 
 The candidate must reload and come back to the same question. The API does not track a candidate's viewing position (it only stores which questions are answered), so the app persists it client-side:
 
-1. On every navigation (Previous / Next / after submit), write `currentIndex` to `localStorage` under a key derived from the token, e.g. `talotrace:interview:{token}:currentQuestion`. Keying by token prevents cross-candidate bleed on a shared device.
+1. On every navigation (Previous / Next / after submit), write `currentIndex` to `localStorage` under a key derived from the token, e.g. `interview:{token}:currentQuestion`. Keying by token prevents cross-candidate bleed on a shared device.
 2. On load, after `getInterview(token)` succeeds:
    - If a stored index is a valid `0..5`, resume at that question.
    - Otherwise default to the first unanswered question (`answer === null`), or Q1 when none are answered.
@@ -204,7 +204,7 @@ Note for the backend/ops: the API's `CORS_ORIGINS` must include this app's origi
 ## 13. Project Structure
 
 ```text
-talot-candidate-web/
+apps/candidate-web/
 ├── app/
 │   ├── layout.tsx
 │   ├── page.tsx

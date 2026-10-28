@@ -1,8 +1,8 @@
-# Talotrace Interview Scoring - Deployment & Integration Design
+# Interview Scoring - Deployment & Integration Design
 
 **Date:** 2026-10-18
 **Status:** Accepted
-**Repo:** `nhat8002nguyen/talot-assessment` (private, monorepo)
+**Repo:** this private monorepo
 **Depends on:** `2026-10-18-api-contract-design.md` (the API contract this plan wires together)
 
 ## 1. Goal

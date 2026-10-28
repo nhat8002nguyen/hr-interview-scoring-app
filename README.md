@@ -1,6 +1,6 @@
-# Talotrace Assessment
+# Interview Scoring
 
-Internal interview-scoring product built as a small monorepo.
+A side project for scoring interview answers.
 Candidates answer six questions through a personal link.
 HR reviews each answer, sees an LLM-suggested score with reasoning, and can override it with a required reason.
 
@@ -166,10 +166,10 @@ It requires a data-pack zip and an audio file:
 
 Import both files from [`apps/backend/postman`](./apps/backend/postman):
 
-- [`talotrace.postman_collection.json`](./apps/backend/postman/talotrace.postman_collection.json)
-- [`talotrace-local.postman_environment.json`](./apps/backend/postman/talotrace-local.postman_environment.json)
+- Collection JSON in that folder
+- Local environment JSON in that folder
 
-Select the `Talotrace Local` environment, start the API, and run `Auth / Sign in (HR)` first.
+Select the local environment, start the API, and run `Auth / Sign in (HR)` first.
 The request stores the JWTs automatically.
 On a clean database, run `HR - import / Import data pack` next so roles and questions exist.
 `Create candidate` stores the candidate token, and `Get interview` stores question IDs.
@@ -252,7 +252,7 @@ Audio-only answers are stored and shown to HR but are not transcribed or LLM-sco
 
 ### What I chose not to build
 
-These are the optional phase-2 extras from the brief and specs:
+These are deferred extras from the original design:
 
 - A score-agreement report against `hr_reference_scores.csv`.
 - Transcription and LLM scoring of the five audio-only answers.
@@ -261,7 +261,7 @@ These are the optional phase-2 extras from the brief and specs:
 - A consent screen and microphone check in the candidate area.
 - A richer candidate-facing error and retry flow beyond the invalid-link screen and basic inline errors.
 
-The deployed demo was listed as a phase-2 item in the original contract but was delivered, so it is not in the list above.
+The live demo was originally deferred, then built, so it is not in the list above.
 
 ## Design docs and deployment
 
