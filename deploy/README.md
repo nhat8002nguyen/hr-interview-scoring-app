@@ -129,7 +129,7 @@ The two Vercel projects are live and were deployed from the CLI:
 Git auto-deploy is not connected yet because the Vercel GitHub app is not installed on the private repository.
 When enabling Git deploys:
 
-1. Install the Vercel GitHub app for `nhat8002nguyen/talot-assessment`.
+1. Install the Vercel GitHub app for `nhat8002nguyen/hr-interview-scoring-app`.
 2. Connect the repository to both projects.
 3. Set each project's Root Directory to `apps/candidate-web` and `apps/hr-web`.
    The directories are currently empty because CLI deploys from each app folder do not need them.
