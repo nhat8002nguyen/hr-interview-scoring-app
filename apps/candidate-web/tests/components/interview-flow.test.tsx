@@ -20,7 +20,7 @@ vi.mock("@/lib/api", async () => {
 });
 
 const codes = ["Q1", "Q2", "Q3", "Q4", "Q5", "Q6"];
-const storageKey = "talotrace:interview:tok:currentQuestion";
+const storageKey = "interview:tok:currentQuestion";
 
 function buildQuestions(answered: number[] = []): Question[] {
   return codes.map((code, index) => ({

@@ -108,7 +108,7 @@ From the repository root, run the production smoke:
 ```bash
 (cd apps/backend && uv run python ../../scripts/smoke_integration.py \
   --api-url https://talot-api.nate-ng.com \
-  --candidate-origin https://talot-candidate-web.vercel.app \
+  --candidate-origin https://interview-candidate-web.vercel.app \
   --pack ../../intial-resources/business-systems-pack.zip \
   --audio ../../intial-resources/business-systems-pack/answers/A031.m4a \
   --timeout 600)
@@ -123,8 +123,8 @@ The database volume is not touched.
 
 The two Vercel projects are live and were deployed from the CLI:
 
-- `talot-candidate-web` -> https://talot-candidate-web.vercel.app
-- `talot-hr-web` -> https://talot-hr-web.vercel.app
+- `interview-candidate-web` -> https://interview-candidate-web.vercel.app
+- `interview-hr-web` -> https://interview-hr-web.vercel.app
 
 Git auto-deploy is not connected yet because the Vercel GitHub app is not installed on the private repository.
 When enabling Git deploys:

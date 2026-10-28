@@ -350,8 +350,8 @@ POSTGRES_PASSWORD=REPLACE_WITH_LONG_RANDOM
 JWT_SECRET=REPLACE_WITH_64_HEX_CHARS
 SEED_HR_EMAIL=hr@example.com
 SEED_HR_PASSWORD=REPLACE_WITH_LONG_RANDOM
-CORS_ORIGINS=https://talot-candidate-web.vercel.app,https://talot-hr-web.vercel.app
-CANDIDATE_WEB_ORIGIN=https://talot-candidate-web.vercel.app
+CORS_ORIGINS=https://interview-candidate-web.vercel.app,https://interview-hr-web.vercel.app
+CANDIDATE_WEB_ORIGIN=https://interview-candidate-web.vercel.app
 DEEPSEEK_API_KEY=REPLACE_WITH_REAL_KEY
 DEEPSEEK_MODEL=deepseek-chat
 AUDIO_STORAGE_DIR=/data/audio
@@ -535,7 +535,7 @@ Do not push until Task 7 has created the host clone, `.env`, and the CI key.
 
 **Interfaces:**
 - Consumes: Vercel token and team ID `team_tKyNGOwj1S8o3c7LpazY2Nte`.
-- Produces: projects `talot-candidate-web` with root `apps/candidate-web` and `talot-hr-web` with root `apps/hr-web`.
+- Produces: projects `interview-candidate-web` with root `apps/candidate-web` and `interview-hr-web` with root `apps/hr-web`.
 - Produces: the two production URLs used for CORS and `CANDIDATE_WEB_ORIGIN`.
 
 - [ ] **Step 1: Create both projects with the correct root directory**
@@ -543,10 +543,10 @@ Do not push until Task 7 has created the host clone, `.env`, and the CI key.
 Use `POST https://api.vercel.com/v11/projects?teamId=$TEAM_ID` with:
 
 ```json
-{"name":"talot-candidate-web","framework":"nextjs","rootDirectory":"apps/candidate-web"}
+{"name":"interview-candidate-web","framework":"nextjs","rootDirectory":"apps/candidate-web"}
 ```
 
-and the same body with `talot-hr-web` and `apps/hr-web`.
+and the same body with `interview-hr-web` and `apps/hr-web`.
 If a project already exists, fetch it with `GET /v9/projects/<name>` and verify `rootDirectory`.
 
 - [ ] **Step 2: Set the API URL on both projects**
@@ -560,14 +560,14 @@ Use `POST https://api.vercel.com/v10/projects/<id>/env?teamId=$TEAM_ID` with:
 - [ ] **Step 3: Record the production URLs**
 
 Fetch both projects and record their names and assigned production URLs.
-Expected defaults are `https://talot-candidate-web.vercel.app` and `https://talot-hr-web.vercel.app`.
+Expected defaults are `https://interview-candidate-web.vercel.app` and `https://interview-hr-web.vercel.app`.
 If Vercel assigned different URLs, use the actual values for `CORS_ORIGINS` and `CANDIDATE_WEB_ORIGIN` in Task 7.
 
 - [ ] **Step 4: Link each app locally**
 
 ```bash
-(cd apps/candidate-web && vercel link --yes --team "$TEAM_ID" --project talot-candidate-web --token "$VERCEL_TOKEN")
-(cd apps/hr-web && vercel link --yes --team "$TEAM_ID" --project talot-hr-web --token "$VERCEL_TOKEN")
+(cd apps/candidate-web && vercel link --yes --team "$TEAM_ID" --project interview-candidate-web --token "$VERCEL_TOKEN")
+(cd apps/hr-web && vercel link --yes --team "$TEAM_ID" --project interview-hr-web --token "$VERCEL_TOKEN")
 ```
 
 Expected: `.vercel/project.json` exists in each app and is ignored by Git.
@@ -733,7 +733,7 @@ Update `DEEPSEEK_API_KEY` in the host `.env` and run `./scripts/deploy.sh` from 
 ```bash
 (cd apps/backend && uv run python ../../scripts/smoke_integration.py \
   --api-url https://talot-api.nate-ng.com \
-  --candidate-origin https://talot-candidate-web.vercel.app \
+  --candidate-origin https://interview-candidate-web.vercel.app \
   --pack ../../intial-resources/business-systems-pack.zip \
   --audio ../../intial-resources/business-systems-pack/answers/A031.m4a \
   --timeout 600)
@@ -754,7 +754,7 @@ Expected: text jobs move from `queued` to `scored`, audio jobs are `needs_a_pers
 
 - [ ] **Step 9: Verify CORS from both production origins**
 
-For each of `https://talot-candidate-web.vercel.app` and `https://talot-hr-web.vercel.app`, send OPTIONS to `/candidate/interview` with `Access-Control-Request-Headers: x-candidate-token`.
+For each of `https://interview-candidate-web.vercel.app` and `https://interview-hr-web.vercel.app`, send OPTIONS to `/candidate/interview` with `Access-Control-Request-Headers: x-candidate-token`.
 Expected: the response echoes the matching `Access-Control-Allow-Origin`.
 
 ---
@@ -792,8 +792,8 @@ Expected: a production URL is printed and matches the HR CORS origin.
 - [ ] **Step 3: Verify both deployments respond**
 
 ```bash
-curl -fsS -o /dev/null -w '%{http_code}\n' https://talot-candidate-web.vercel.app/
-curl -fsS -o /dev/null -w '%{http_code}\n' https://talot-hr-web.vercel.app/sign-in
+curl -fsS -o /dev/null -w '%{http_code}\n' https://interview-candidate-web.vercel.app/
+curl -fsS -o /dev/null -w '%{http_code}\n' https://interview-hr-web.vercel.app/sign-in
 ```
 
 Expected: `200` for both.
@@ -863,7 +863,7 @@ curl -fsS https://talot-api.nate-ng.com/health
 curl -fsS https://tbv-api.nate-ng.com/health
 (cd apps/backend && uv run python ../../scripts/smoke_integration.py \
   --api-url https://talot-api.nate-ng.com \
-  --candidate-origin https://talot-candidate-web.vercel.app \
+  --candidate-origin https://interview-candidate-web.vercel.app \
   --pack ../../intial-resources/business-systems-pack.zip \
   --audio ../../intial-resources/business-systems-pack/answers/A031.m4a \
   --timeout 600)

@@ -22,7 +22,7 @@ type Phase = "loading" | "invalid-link" | "error" | "ready" | "complete";
 type SubmitState = "idle" | "submitting" | "received" | "error";
 
 function storageKey(token: string): string {
-  return `talotrace:interview:${token}:currentQuestion`;
+  return `interview:${token}:currentQuestion`;
 }
 
 function isUnauthorized(error: unknown): boolean {

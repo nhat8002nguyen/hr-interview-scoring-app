@@ -14,8 +14,8 @@ Branch: `no-mistakes/production-e2e`
 
 1. `curl -fsS https://talot-api.nate-ng.com/health` returns `{"status":"ok"}`.
 2. `curl -fsS https://tbv-api.nate-ng.com/health` returns a healthy status.
-3. `curl -fsS -o /dev/null -w '%{http_code}' https://talot-candidate-web.vercel.app/` returns 200.
-4. `curl -fsS -o /dev/null -w '%{http_code}' https://talot-hr-web.vercel.app/sign-in` returns 200.
+3. `curl -fsS -o /dev/null -w '%{http_code}' https://interview-candidate-web.vercel.app/` returns 200.
+4. `curl -fsS -o /dev/null -w '%{http_code}' https://interview-hr-web.vercel.app/sign-in` returns 200.
 5. CORS preflight on `/candidate/interview` with each Vercel origin returns that origin in `Access-Control-Allow-Origin`.
 6. HR sign-in succeeds with the seeded account.
 7. `GET /hr/roles` returns 5 roles.

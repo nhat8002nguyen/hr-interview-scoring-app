@@ -19,7 +19,7 @@ export function Nav() {
     <header className="border-b border-slate-200 bg-white">
       <nav className="mx-auto flex w-full max-w-4xl items-center gap-4 p-4 text-sm">
         <Link href="/roles" className="font-semibold">
-          Talotrace HR
+          Interview Scoring
         </Link>
         <Link href="/roles" className="text-slate-600 hover:underline">
           Roles

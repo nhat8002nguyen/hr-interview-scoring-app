@@ -6,8 +6,8 @@ HR reviews each answer, sees an LLM-suggested score with reasoning, and can over
 
 ## Live demo
 
-- Candidate app: https://talot-candidate-web.vercel.app
-- HR app: https://talot-hr-web.vercel.app
+- Candidate app: https://interview-candidate-web.vercel.app
+- HR app: https://interview-hr-web.vercel.app
 - API health: https://talot-api.nate-ng.com/health
 
 Sign in to the HR app with the seeded demo account `hr@talotrace.ai` / `4uuXKGhi24zDU4MShW8dpJRK`, or create your own account from the sign-up page.

@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Talotrace Interview",
-  description: "Answer your Talotrace interview questions.",
+  title: "Interview Scoring",
+  description: "Answer your interview questions.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

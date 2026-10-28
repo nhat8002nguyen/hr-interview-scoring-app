@@ -1,6 +1,6 @@
-# Talotrace HR Web
+# HR Web
 
-The HR area for the Talotrace interview-scoring app.
+The HR area for the interview-scoring app.
 Anyone can create an HR account from the sign-up page, or sign in with an existing account.
 HR then browses candidates per role, sees each answer with the LLM's suggested score and reasoning, overrides scores with a required reason, watches scoring jobs, retries failures, imports the data pack, and creates candidates.
 Each signed-in account only sees its own candidates and related data.
@@ -8,7 +8,7 @@ Each signed-in account only sees its own candidates and related data.
 ## Prerequisites
 
 - Node.js 20.9+
-- A running Talotrace API (`apps/backend`, FastAPI) backed by PostgreSQL, per the accepted API contract.
+- A running API (`apps/backend`, FastAPI) backed by PostgreSQL, per the accepted API contract.
 - The data pack imported, or available to import through the UI.
 
 ## Configuration

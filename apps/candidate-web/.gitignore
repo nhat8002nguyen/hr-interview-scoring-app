@@ -62,6 +62,6 @@ intial-resources/
 .superpowers/
 
 # Git worktrees (nested working trees)
-/talot-backend/
-/talot-candidate-web/
-/talot-hr-web/
+/backend/
+/candidate-web/
+/hr-web/

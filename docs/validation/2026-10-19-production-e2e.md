@@ -9,8 +9,8 @@
 
 | Component | URL | Result |
 |---|---|---|
-| Candidate app | `https://talot-candidate-web.vercel.app` | HTTP 200 |
-| HR app | `https://talot-hr-web.vercel.app/sign-in` | HTTP 200 |
+| Candidate app | `https://interview-candidate-web.vercel.app` | HTTP 200 |
+| HR app | `https://interview-hr-web.vercel.app/sign-in` | HTTP 200 |
 | API | `https://talot-api.nate-ng.com/health` | `{"status":"ok"}` |
 | Existing template API | `https://tbv-api.nate-ng.com/health` | `{"status":"ok"}` |
 
