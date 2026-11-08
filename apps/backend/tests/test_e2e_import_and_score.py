@@ -94,6 +94,13 @@ class FakeLlm:
         return LlmScore(3, "meets the bar")
 
 
+class _UnusedTranscription:
+    """Audio rows stay needs_a_person until enqueue changes, so this is not called."""
+
+    async def transcribe(self, data: bytes, *, filename: str, language: str = "en") -> str:
+        raise AssertionError("e2e audio jobs are not queued for transcription yet")
+
+
 def _docker(args: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["docker", *args], capture_output=True, text=True, check=False)
 
@@ -260,6 +267,8 @@ async def test_import_and_score_end_to_end(
         worker = ScoringWorker(
             lambda: SqlAlchemyScoringUnitOfWork(session_factory),
             FakeLlm(),
+            transcription=_UnusedTranscription(),
+            file_storage=file_storage,
             max_attempts=3,
             poll_interval_seconds=0,
             stop_event=stop_event,
