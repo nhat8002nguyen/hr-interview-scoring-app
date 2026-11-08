@@ -36,15 +36,16 @@ Prerequisites:
 - `uv` and Python 3.14 for backend development outside Docker
 - Node.js 22+ and npm for the web apps outside Docker
 
-Create the root env file and add a DeepSeek key for live scoring:
+Create the root env file and add provider keys for live scoring:
 
 ```bash
 cp .env.example .env
-# edit .env and set DEEPSEEK_API_KEY
+# edit .env and set DEEPSEEK_API_KEY and GROQ_API_KEY
 ```
 
-Without a key the API still runs and all non-scoring flows work.
-Text answers will fail scoring after their retries and appear as `failed`, which HR can retry once a key is configured.
+Without those keys the API still runs and all non-scoring flows work.
+Text answers fail scoring after their retries and appear as `failed`, which HR can retry once a DeepSeek key is configured.
+Audio answers fail transcription and end as `needs_a_person` until a Groq key is configured.
 
 ## How to run
 
@@ -153,7 +154,7 @@ This checks `db`, `api`, `candidate-web`, and `hr-web`, loads the HR sign-in pag
 
 ### API smoke test
 
-`scripts/smoke_integration.py` exercises the deployed or local API end to end: sign in, import a pack, create a candidate, submit text and audio, wait for scoring, and verify audio becomes `needs_a_person`.
+`scripts/smoke_integration.py` exercises the deployed or local API end to end: sign in, import a pack, create a candidate, submit text and audio, and wait until both reach `scored`.
 It requires a data-pack zip and an audio file:
 
 ```bash
@@ -203,6 +204,7 @@ Each app is self-contained under `apps/`, with its own dependencies and build fi
 
 Statuses are `queued`, `scored`, `failed`, and `needs_a_person`.
 A failed job never exposes a score.
+`needs_a_person` is the fallback when audio transcription is exhausted.
 
 ### API endpoints
 
@@ -239,23 +241,23 @@ Two limitations are accepted and documented:
 1. The candidate submits text as JSON or audio as multipart form data.
 2. The API computes a SHA-256 hash of the submitted bytes.
 3. Identical content is an idempotent no-op and returns `200` with `unchanged: true`.
-4. Changed content atomically upserts the single answer row, increments `version`, and resets the job to `queued`. Audio resets it to `needs_a_person`.
+4. Changed content atomically upserts the single answer row, increments `version`, and resets the job to `queued` for both text and audio.
 5. Changed submissions are capped at `MAX_ANSWER_SUBMISSIONS` (default 3). A submit beyond the cap returns `409`.
 6. A worker claims the queued job with `FOR UPDATE SKIP LOCKED`.
-7. The worker builds a prompt from the question prompt and grading guide, sends the candidate text as untrusted data, and calls the DeepSeek adapter.
-8. The reply is strictly validated as `{score: 1-4, reasoning: string}`. Invalid output is rejected.
-9. Success stores the suggested score and reasoning and sets `final_score` to the suggested score.
-10. Failure increments the attempt count, retries up to `SCORING_MAX_ATTEMPTS` (default 3), then sets `failed` with `last_error`.
-11. HR can retry a failed job or override any scored or `needs_a_person` answer with a score and a required reason.
-
-Audio-only answers are stored and shown to HR but are not transcribed or LLM-scored in this version.
+7. Audio answers that do not already have text are transcribed with Groq, and the transcript is saved on the answer.
+   Exhausted transcription failures end as `needs_a_person` with `last_error` and no score.
+8. The worker builds a prompt from the question prompt and grading guide, sends the candidate text as untrusted data, and calls the DeepSeek adapter.
+9. The reply is strictly validated as `{score: 1-4, reasoning: string}`. Invalid output is rejected.
+10. Success stores the suggested score and reasoning and sets `final_score` to the suggested score.
+11. Scoring failure increments the attempt count, retries up to `SCORING_MAX_ATTEMPTS` (default 3), then sets `failed` with `last_error`.
+    The transcript is kept.
+12. HR can retry a failed job or override any scored or `needs_a_person` answer with a score and a required reason.
 
 ### What I chose not to build
 
 These are deferred extras from the original design:
 
 - A score-agreement report against `hr_reference_scores.csv`.
-- Transcription and LLM scoring of the five audio-only answers.
 - A dedicated "needs a person" list. The status appears in the scoring-job list, but there is no curated queue.
 - Candidate ordering to help HR decide who to read first.
 - A consent screen and microphone check in the candidate area.

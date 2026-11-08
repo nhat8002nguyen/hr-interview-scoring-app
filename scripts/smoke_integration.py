@@ -18,8 +18,6 @@ import httpx
 
 QUESTIONS_TOTAL = 6
 PACK_ANSWERS = 35
-PACK_TEXT_JOBS = 30
-PACK_AUDIO_ANSWERS = 5
 
 
 def fail(message: str) -> NoReturn:
@@ -46,6 +44,35 @@ def expect_cors(response: httpx.Response, origin: str, label: str) -> None:
         origin,
         f"{label}: CORS allow-origin",
     )
+
+
+def wait_until_scored(
+    client: httpx.Client,
+    auth: dict[str, str],
+    answer_id: str,
+    label: str,
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout_seconds
+    last_status = None
+    scoring: dict[str, Any] = {}
+    while time.monotonic() < deadline:
+        response = client.get(f"/hr/answers/{answer_id}", headers=auth)
+        expect_status(response, 200, f"{label} detail")
+        scoring = response.json()["scoring"]
+        status = scoring["status"]
+        if status != last_status:
+            print(f"{label} scoring status: {status}", flush=True)
+            last_status = status
+        if status == "scored":
+            score = scoring["suggested_score"]
+            if not isinstance(score, int) or not 1 <= score <= 4:
+                fail(f"{label}: invalid suggested score: {score!r}")
+            return scoring
+        if status in {"failed", "needs_a_person"}:
+            fail(f"{label} ended as {status}: {scoring.get('last_error')}")
+        time.sleep(2)
+    fail(f"timed out waiting for {label} to score; last status={last_status}")
 
 
 def main() -> int:
@@ -88,18 +115,18 @@ def main() -> int:
         summary = response.json()
 
         if summary["answers_imported"] == PACK_ANSWERS:
-            expect_equal(summary["scoring_jobs_queued"], PACK_TEXT_JOBS, "import text jobs")
-            expect_equal(
-                summary["audio_answers_needing_person"],
-                PACK_AUDIO_ANSWERS,
-                "import audio answers",
-            )
-        elif summary["answers_imported"] == 0:
-            expect_equal(summary["scoring_jobs_queued"], 0, "repeat import text jobs")
+            expect_equal(summary["scoring_jobs_queued"], PACK_ANSWERS, "import queued jobs")
             expect_equal(
                 summary["audio_answers_needing_person"],
                 0,
-                "repeat import audio answers",
+                "import audio answers needing a person",
+            )
+        elif summary["answers_imported"] == 0:
+            expect_equal(summary["scoring_jobs_queued"], 0, "repeat import queued jobs")
+            expect_equal(
+                summary["audio_answers_needing_person"],
+                0,
+                "repeat import audio answers needing a person",
             )
         else:
             fail(f"unexpected import summary: {summary}")
@@ -185,39 +212,25 @@ def main() -> int:
             for answer in detail["answers"]
             if answer["question_id"] == second_question["id"]
         )
-        expect_equal(
-            audio_answer["scoring"]["status"],
-            "needs_a_person",
-            "audio scoring status",
+        text_scoring = wait_until_scored(
+            client,
+            auth,
+            first_answer["id"],
+            "q1",
+            args.timeout,
         )
-
-        deadline = time.monotonic() + args.timeout
-        last_status = None
-        while time.monotonic() < deadline:
-            response = client.get(
-                f"/hr/answers/{first_answer['id']}",
-                headers=auth,
-            )
-            expect_status(response, 200, "answer detail")
-            scoring = response.json()["scoring"]
-            if scoring["status"] != last_status:
-                print(f"q1 scoring status: {scoring['status']}", flush=True)
-                last_status = scoring["status"]
-            if scoring["status"] == "scored":
-                score = scoring["suggested_score"]
-                if not isinstance(score, int) or not 1 <= score <= 4:
-                    fail(f"invalid suggested score: {score!r}")
-                break
-            if scoring["status"] == "failed":
-                fail(f"scoring failed: {scoring.get('last_error')}")
-            time.sleep(2)
-        else:
-            fail(f"timed out waiting for q1 to score; last status={last_status}")
+        audio_scoring = wait_until_scored(
+            client,
+            auth,
+            audio_answer["id"],
+            "q2 audio",
+            args.timeout,
+        )
 
         print(f"import summary: {summary}")
         print(f"smoke candidate: id={candidate_id} email={email}")
-        print(f"q1 scored: {scoring['suggested_score']}")
-        print(f"q2 audio: {audio_answer['scoring']['status']}")
+        print(f"q1 scored: {text_scoring['suggested_score']}")
+        print(f"q2 audio scored: {audio_scoring['suggested_score']}")
         print("smoke integration ok")
 
     return 0

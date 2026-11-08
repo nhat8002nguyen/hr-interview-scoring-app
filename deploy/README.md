@@ -50,7 +50,9 @@ openssl rand -base64 24       # POSTGRES_PASSWORD (use alphanumeric only)
 openssl rand -base64 18       # SEED_HR_PASSWORD
 ```
 
-Set `DEEPSEEK_API_KEY`, `CORS_ORIGINS`, and `CANDIDATE_WEB_ORIGIN` to the real values.
+Set `DEEPSEEK_API_KEY`, `GROQ_API_KEY`, `CORS_ORIGINS`, and `CANDIDATE_WEB_ORIGIN` to the real values.
+New audio answers are transcribed with Groq and then scored.
+Without `GROQ_API_KEY`, transcription fails and those jobs end as `needs_a_person`.
 Never commit `.env`.
 
 Issue the certificate:

@@ -122,6 +122,9 @@ The import is idempotent on the data pack's external refs, so re-importing does 
 
 ## Environment variables
 
+New audio answers are transcribed with Groq, then scored with DeepSeek.
+`needs_a_person` is the fallback when transcription is exhausted.
+
 | Variable | Meaning | Default | Compose example |
 |---|---|---|---|
 | `DATABASE_URL` | asyncpg DSN | `postgresql+asyncpg://postgres:postgres@db:5432/talot` | same |
@@ -131,10 +134,13 @@ The import is idempotent on the data pack's external refs, so re-importing does 
 | `DEEPSEEK_API_KEY` | LLM provider key | empty | `${DEEPSEEK_API_KEY:-}` |
 | `DEEPSEEK_MODEL` | LLM model id | `deepseek-chat` | same |
 | `DEEPSEEK_BASE_URL` | OpenAI-compatible LLM base URL | `https://api.deepseek.com` | same |
+| `GROQ_API_KEY` | audio transcription key | empty | `${GROQ_API_KEY:-}` |
+| `GROQ_MODEL` | Whisper model id | `whisper-large-v3` | same |
+| `GROQ_BASE_URL` | OpenAI-compatible transcription base URL | `https://api.groq.com/openai/v1` | same |
 | `AUDIO_STORAGE_DIR` | audio file directory | `/tmp/talotrace-audio` | `/data/audio` |
 | `SCORING_WORKERS` | worker pool size | `2` | `2` |
 | `SCORING_MAX_ATTEMPTS` | retry ceiling before `failed` | `3` | `3` |
-| `SCORING_LEASE_TIMEOUT_SECONDS` | stale claim recovery window | `300` | `300` |
+| `SCORING_LEASE_TIMEOUT_SECONDS` | stale claim recovery window | `600` | `600` |
 | `MAX_ANSWER_SUBMISSIONS` | max changed submits per candidate x question | `3` | `3` |
 | `SEED_HR_EMAIL` | seeded HR account email | `hr@talotrace.ai` | same |
 | `SEED_HR_PASSWORD` | seeded HR account password | `change-me` | same |
