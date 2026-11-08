@@ -323,7 +323,7 @@ async def test_submit_text_changed_requeues(tmp_path) -> None:
     ]
 
 
-async def test_submit_audio_requires_person(tmp_path) -> None:
+async def test_submit_audio_enqueues_queued(tmp_path) -> None:
     service, _, scoring_jobs, file_storage = _answers_service(tmp_path, question_ids={7})
 
     result = await service.submit_audio(
@@ -337,7 +337,7 @@ async def test_submit_audio_requires_person(tmp_path) -> None:
     content_hash = sha256(b"\x00audio").hexdigest()
     assert result.answer.audio_key == f"audio/1/7/{content_hash}.m4a"
     assert await file_storage.read(result.answer.audio_key) == b"\x00audio"
-    assert scoring_jobs.reset_calls == [(result.answer.id, "needs_a_person")]
+    assert scoring_jobs.reset_calls == [(result.answer.id, "queued")]
 
 
 async def test_submit_unknown_question_raises(tmp_path) -> None:

@@ -15,11 +15,14 @@ class Settings(JwtSettings):
     scoring_workers: int = 2
     scoring_max_attempts: int = 3
     max_answer_submissions: int = 3
-    scoring_lease_timeout_seconds: int = 300
+    scoring_lease_timeout_seconds: int = 600  # covers Groq transcription plus DeepSeek
     scoring_poll_interval_seconds: float = 2.0
     deepseek_api_key: str = ""
     deepseek_model: str = "deepseek-chat"
     deepseek_base_url: str = "https://api.deepseek.com"
+    groq_api_key: str = ""
+    groq_model: str = "whisper-large-v3"
+    groq_base_url: str = "https://api.groq.com/openai/v1"
     audio_storage_dir: str = "/tmp/talotrace-audio"
     seed_hr_email: str = "hr@talotrace.ai"
     seed_hr_password: str = "change-me"

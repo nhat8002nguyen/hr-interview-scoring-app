@@ -19,7 +19,7 @@ Branch: `no-mistakes/production-e2e`
 5. CORS preflight on `/candidate/interview` with each Vercel origin returns that origin in `Access-Control-Allow-Origin`.
 6. HR sign-in succeeds with the seeded account.
 7. `GET /hr/roles` returns 5 roles.
-8. `GET /hr/scoring-jobs` shows `scored` and `needs_a_person` jobs and zero `failed` jobs.
-9. `scripts/smoke_integration.py` against production imports the pack, submits text and audio, observes `scored` and `needs_a_person`, and exits 0.
+8. `GET /hr/scoring-jobs` shows `scored` jobs for text and new audio when DeepSeek and Groq are configured; `needs_a_person` remains valid for transcription exhaustion and any leftover historical rows.
+9. `scripts/smoke_integration.py` against production imports the pack, submits text and audio, waits until both reach `scored`, and exits 0.
 10. A 3 MB audio upload through the production edge returns 201.
 11. The committed report `docs/validation/2026-10-19-production-e2e.md` matches the observed results.

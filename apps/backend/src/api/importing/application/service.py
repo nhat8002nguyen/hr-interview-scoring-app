@@ -295,7 +295,7 @@ class ImportService:
                 )
                 if changed:
                     answers_imported += 1
-                    audio_answers_needing_person += 1
+                    scoring_jobs_queued += 1
 
         return ImportSummary(
             roles_created=roles_created,

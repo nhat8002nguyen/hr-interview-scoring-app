@@ -85,9 +85,13 @@ These are the canonical names. Implementations must read exactly these.
 | `CANDIDATE_WEB_ORIGIN` | origin used to build interview links | `http://localhost:3001` | `https://<candidate>.vercel.app` |
 | `DEEPSEEK_API_KEY` | LLM provider key | - | real key |
 | `DEEPSEEK_MODEL` | LLM model id | - | provider default |
+| `GROQ_API_KEY` | audio transcription key | - | real key |
+| `GROQ_MODEL` | Whisper model id | `whisper-large-v3` | `whisper-large-v3` |
+| `GROQ_BASE_URL` | OpenAI-compatible transcription base URL | `https://api.groq.com/openai/v1` | same |
 | `AUDIO_STORAGE_DIR` | audio file directory | `/data/audio` | `/data/audio` |
 | `SCORING_WORKERS` | worker pool size | `2` | `2` |
 | `SCORING_MAX_ATTEMPTS` | retry ceiling before `failed` | `3` | `3` |
+| `SCORING_LEASE_TIMEOUT_SECONDS` | stale claim recovery window | `600` | `600` |
 
 ### 5.2 Web apps (`apps/candidate-web`, `apps/hr-web`)
 
@@ -224,7 +228,7 @@ After all three implementations are merged, two wiring executions reconcile each
 ### 11.2 Production
 
 - `curl -fsS https://talot-api.nate-ng.com/health` → `{"status":"ok"}`.
-- Import the data pack via the HR UI; text answers reach `scored`, audio answers are `needs_a_person`.
+- Import the data pack via the HR UI; text and audio answers reach `scored` when DeepSeek and Groq keys are configured.
 - Both Vercel apps load over HTTPS and call the API cross-origin with correct CORS headers.
 
 ## 12. Assumptions & Not Built

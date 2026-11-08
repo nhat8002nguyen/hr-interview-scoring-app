@@ -318,7 +318,7 @@ async def test_import_creates_text_candidates_and_answers() -> None:
 
     assert summary.candidates_created == 2
     assert summary.answers_imported == 2
-    assert summary.scoring_jobs_queued == 1
+    assert summary.scoring_jobs_queued == 2
 
     created = candidates.candidates["C2041"]
     backend_role = catalog.roles["Backend Engineer"]
@@ -335,13 +335,13 @@ async def test_import_creates_text_candidates_and_answers() -> None:
     assert imported.question_id == catalog.questions["Q1"].id
 
 
-async def test_import_audio_is_needs_a_person() -> None:
+async def test_import_audio_enqueues_queued() -> None:
     service, catalog, candidates, answers, file_storage = _service()
 
     summary = await service.import_zip(_pack(include_answers=True), owner_id=1)
 
-    assert summary.audio_answers_needing_person == 1
-    assert summary.scoring_jobs_queued == 1
+    assert summary.audio_answers_needing_person == 0
+    assert summary.scoring_jobs_queued == 2
 
     created = candidates.candidates["C2057"]
     sales_role = catalog.roles["Sales Executive"]

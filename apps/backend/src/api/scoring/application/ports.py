@@ -1,7 +1,8 @@
 """Ports for the scoring application layer.
 
 The worker consumes :class:`ScoringLlmPort` to ask an LLM to score a candidate
-answer. Infrastructure adapters (for example the DeepSeek client) implement it.
+answer, and :class:`TranscriptionPort` to turn audio into text first.
+Infrastructure adapters (for example the DeepSeek and Groq clients) implement them.
 """
 
 from collections.abc import Callable
@@ -25,9 +26,7 @@ class ScoringUnitOfWork(Protocol):
     ) -> None: ...
 
 
-ScoringUnitOfWorkFactory = Callable[
-    [], AbstractAsyncContextManager[ScoringUnitOfWork]
-]
+ScoringUnitOfWorkFactory = Callable[[], AbstractAsyncContextManager[ScoringUnitOfWork]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,3 +50,17 @@ class ScoringLlmPort(Protocol):
         grading_guide: dict[str, str],
         answer_text: str,
     ) -> LlmScore: ...
+
+
+class TranscriptionError(Exception):
+    """Raised when audio transcription fails or returns blank text."""
+
+
+class TranscriptionPort(Protocol):
+    async def transcribe(
+        self,
+        data: bytes,
+        *,
+        filename: str,
+        language: str = "en",
+    ) -> str: ...

@@ -1,9 +1,17 @@
-"""Background worker that scores queued jobs through the LLM port."""
+"""Background worker that transcribes audio when needed, then scores the job."""
 
 import asyncio
 from datetime import UTC, datetime
+from pathlib import Path
 
-from api.scoring.application.ports import LlmError, ScoringLlmPort, ScoringUnitOfWorkFactory
+from api.candidates.application.ports import FileStorage
+from api.scoring.application.ports import (
+    LlmError,
+    ScoringLlmPort,
+    ScoringUnitOfWorkFactory,
+    TranscriptionError,
+    TranscriptionPort,
+)
 from api.scoring.domain.entities import ScoringJob
 
 
@@ -13,12 +21,16 @@ class ScoringWorker:
         uow_factory: ScoringUnitOfWorkFactory,
         llm: ScoringLlmPort,
         *,
+        transcription: TranscriptionPort,
+        file_storage: FileStorage,
         max_attempts: int,
         poll_interval_seconds: float,
         stop_event: asyncio.Event,
     ) -> None:
         self._uow_factory = uow_factory
         self._llm = llm
+        self._transcription = transcription
+        self._file_storage = file_storage
         self._max_attempts = max_attempts
         self._poll_interval_seconds = poll_interval_seconds
         self._stop_event = stop_event
@@ -44,10 +56,28 @@ class ScoringWorker:
             scoring_input = await uow.scoring_jobs.load_scoring_input(job.answer_id)
         if scoring_input is None:
             raise LlmError("scoring input missing")
+
+        answer_text = (scoring_input.answer_text or "").strip()
+        if scoring_input.answer_type == "audio" and not answer_text:
+            if not scoring_input.audio_key:
+                raise TranscriptionError("audio answer missing audio_key")
+            try:
+                data = await self._file_storage.read(scoring_input.audio_key)
+            except Exception as exc:
+                raise TranscriptionError(f"audio file unreadable: {exc}") from exc
+            filename = Path(scoring_input.audio_key).name or "audio.m4a"
+            answer_text = await self._transcription.transcribe(
+                data,
+                filename=filename,
+                language="en",
+            )
+            async with self._uow_factory() as uow:
+                await uow.scoring_jobs.update_answer_text(job.answer_id, answer_text)
+
         result = await self._llm.score(
             scoring_input.prompt,
             scoring_input.grading_guide,
-            scoring_input.answer_text,
+            answer_text,
         )
         async with self._uow_factory() as uow:
             await uow.scoring_jobs.mark_scored(
@@ -58,10 +88,12 @@ class ScoringWorker:
             )
 
     async def _record_failure(self, job: ScoringJob, exc: Exception) -> None:
+        exhausted_status = "needs_a_person" if isinstance(exc, TranscriptionError) else "failed"
         async with self._uow_factory() as uow:
             await uow.scoring_jobs.record_failure(
                 job.id,
                 error=str(exc),
                 now=datetime.now(UTC),
                 max_attempts=self._max_attempts,
+                exhausted_status=exhausted_status,
             )

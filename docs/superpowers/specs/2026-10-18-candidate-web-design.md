@@ -28,7 +28,7 @@ It consumes only the three `/candidate/*` endpoints and never shows scores, grad
 ### 2.2 Phase 2 (out of scope)
 
 - Consent screen and microphone check.
-- Transcribe or score audio answers (audio is uploaded and stored only in phase 1).
+- Transcribe or score audio answers (owned by the backend; see `2026-11-08-groq-audio-transcription-design.md`).
 - Polished candidate-facing error messages and retry flow.
 - Deployed demo.
 

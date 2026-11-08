@@ -25,7 +25,9 @@ class ScoringInput:
     answer_id: int
     prompt: str
     grading_guide: dict[str, str]
-    answer_text: str
+    answer_text: str | None
+    answer_type: str
+    audio_key: str | None
 
 
 @dataclass(frozen=True, slots=True)

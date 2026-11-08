@@ -65,4 +65,4 @@ Optional E2E environment variables: `E2E_HR_EMAIL`, `E2E_HR_PASSWORD`, `E2E_PACK
 
 ## Not built (phase 2)
 
-Score-agreement reporting, audio transcription, a curated "needs a person" list, candidate ordering, and a deployed demo.
+Score-agreement reporting, client-side audio transcription (backend owns Groq), a curated "needs a person" list, candidate ordering, and a deployed demo.

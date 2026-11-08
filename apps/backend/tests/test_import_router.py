@@ -27,8 +27,8 @@ SUMMARY = ImportSummary(
     questions_created=6,
     candidates_created=2,
     answers_imported=2,
-    scoring_jobs_queued=1,
-    audio_answers_needing_person=1,
+    scoring_jobs_queued=2,
+    audio_answers_needing_person=0,
 )
 
 
@@ -82,8 +82,8 @@ async def test_import_returns_summary() -> None:
         "questions_created": 6,
         "candidates_created": 2,
         "answers_imported": 2,
-        "scoring_jobs_queued": 1,
-        "audio_answers_needing_person": 1,
+        "scoring_jobs_queued": 2,
+        "audio_answers_needing_person": 0,
     }
     assert service.data == b"\x50\x4b\x03\x04"
 

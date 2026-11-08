@@ -25,6 +25,21 @@ def test_record_failure_transitions() -> None:
     assert "queued" in sql
 
 
+def test_record_failure_can_exhaust_to_needs_a_person() -> None:
+    stmt = build_record_failure_statement(
+        1, "boom", datetime.now(UTC), 3, exhausted_status="needs_a_person"
+    )
+    sql = str(stmt.compile(dialect=postgresql.dialect()))
+    assert "needs_a_person" in sql
+    assert "failed" not in sql.replace("needs_a_person", "")
+
+
+def test_load_scoring_input_includes_audio_fields() -> None:
+    sql = str(build_load_scoring_input_statement(1).compile(dialect=postgresql.dialect()))
+    assert "answers.answer_type" in sql
+    assert "answers.audio_key" in sql
+
+
 def test_load_scoring_input_joins() -> None:
     sql = str(build_load_scoring_input_statement(1).compile(dialect=postgresql.dialect()))
     assert "answers" in sql

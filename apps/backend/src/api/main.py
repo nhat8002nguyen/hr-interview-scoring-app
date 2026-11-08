@@ -30,6 +30,7 @@ from api.importing.presentation.errors import register_importing_exception_handl
 from api.importing.presentation.router import import_router
 from api.scoring.application.service import ScoringService
 from api.scoring.application.worker import ScoringWorker
+from api.scoring.infrastructure.groq_transcription import GroqTranscription
 from api.scoring.infrastructure.llm import DeepSeekLlm
 from api.scoring.infrastructure.reader import ScoringServiceReader
 from api.scoring.infrastructure.unit_of_work import SqlAlchemyScoringUnitOfWork
@@ -84,6 +85,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             configured.deepseek_model,
             configured.deepseek_base_url,
         )
+        transcription = GroqTranscription(
+            configured.groq_api_key,
+            configured.groq_model,
+            configured.groq_base_url,
+        )
 
         app.state.hashing_service = hashing
         app.state.jwt_service = jwt
@@ -105,6 +111,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 ScoringWorker(
                     lambda: SqlAlchemyScoringUnitOfWork(session_factory),
                     llm,
+                    transcription=transcription,
+                    file_storage=file_storage,
                     max_attempts=configured.scoring_max_attempts,
                     poll_interval_seconds=configured.scoring_poll_interval_seconds,
                     stop_event=stop_event,
@@ -127,6 +135,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             for worker in workers:
                 worker.cancel()
             await asyncio.gather(*workers, return_exceptions=True)
+            await transcription.aclose()
             await llm.aclose()
             await engine.dispose()
 

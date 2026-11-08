@@ -194,7 +194,7 @@ class AnswersService:
                 external_ref=None,
                 submitted_at=datetime.now(UTC),
             ),
-            status="needs_a_person",
+            status="queued",
         )
 
     async def _submit(self, answer: Answer, *, status: str) -> SubmitResult:
@@ -255,7 +255,6 @@ class AnswersService:
         external_ref: str | None,
         submitted_at: datetime,
     ) -> tuple[Answer, bool]:
-        status = "queued" if answer_type == "text" else "needs_a_person"
         async with self._uow_factory() as uow:
             stored, changed = await uow.answers.upsert(
                 Answer(
@@ -273,5 +272,5 @@ class AnswersService:
                 max_submissions=None,
             )
         if changed:
-            await self._scoring_jobs.reset_for_answer(stored.id, status=status)
+            await self._scoring_jobs.reset_for_answer(stored.id, status="queued")
         return stored, changed
