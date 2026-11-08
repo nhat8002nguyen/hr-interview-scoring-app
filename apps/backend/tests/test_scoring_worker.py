@@ -53,6 +53,8 @@ class FakeScoringJobRepository:
             prompt="What is 2+2?",
             grading_guide={"1": "Bad", "4": "Great"},
             answer_text="4",
+            answer_type="text",
+            audio_key=None,
         )
         self.mark_scored_calls: list[tuple] = []
         self.record_failure_calls: list[tuple] = []

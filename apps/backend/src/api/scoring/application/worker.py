@@ -42,7 +42,7 @@ class ScoringWorker:
     async def _process(self, job: ScoringJob) -> None:
         async with self._uow_factory() as uow:
             scoring_input = await uow.scoring_jobs.load_scoring_input(job.answer_id)
-        if scoring_input is None:
+        if scoring_input is None or scoring_input.answer_text is None:
             raise LlmError("scoring input missing")
         result = await self._llm.score(
             scoring_input.prompt,

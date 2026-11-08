@@ -55,6 +55,7 @@ def build_record_failure_statement(
     error: str,
     now: datetime,
     max_attempts: int,
+    exhausted_status: str = "failed",
 ) -> Update:
     return (
         update(ScoringJobModel)
@@ -65,7 +66,10 @@ def build_record_failure_statement(
             claimed_at=None,
             updated_at=now,
             status=case(
-                (ScoringJobModel.attempt_count + 1 >= max_attempts, literal_column("'failed'")),
+                (
+                    ScoringJobModel.attempt_count + 1 >= max_attempts,
+                    literal_column(f"'{exhausted_status}'"),
+                ),
                 else_=literal_column("'queued'"),
             ),
         )
@@ -74,10 +78,12 @@ def build_record_failure_statement(
 
 def build_load_scoring_input_statement(
     answer_id: int,
-) -> Select[str | None, str, dict[str, str]]:
+) -> Select[str | None, str, str | None, str, dict[str, str]]:
     return (
         select(
             AnswerModel.text,
+            AnswerModel.answer_type,
+            AnswerModel.audio_key,
             QuestionModel.prompt,
             QuestionModel.grading_guide,
         )
@@ -190,9 +196,12 @@ class SqlAlchemyScoringJobRepository:
         error: str,
         now: datetime,
         max_attempts: int,
+        exhausted_status: str = "failed",
     ) -> ScoringJob:
         await self._session.execute(
-            build_record_failure_statement(job_id, error, now, max_attempts)
+            build_record_failure_statement(
+                job_id, error, now, max_attempts, exhausted_status=exhausted_status
+            )
         )
         row = await self._load(job_id)
         if row is None:
@@ -274,20 +283,25 @@ class SqlAlchemyScoringJobRepository:
         )
         return cast(CursorResult[Any], result).rowcount
 
+    async def update_answer_text(self, answer_id: int, text: str) -> None:
+        await self._session.execute(
+            update(AnswerModel).where(AnswerModel.id == answer_id).values(text=text)
+        )
+
     async def load_scoring_input(self, answer_id: int) -> ScoringInput | None:
         row = (
             await self._session.execute(build_load_scoring_input_statement(answer_id))
         ).one_or_none()
         if row is None:
             return None
-        text, prompt, grading_guide = row
-        if text is None:
-            return None
+        text, answer_type, audio_key, prompt, grading_guide = row
         return ScoringInput(
             answer_id=answer_id,
             prompt=prompt,
             grading_guide=grading_guide,
             answer_text=text,
+            answer_type=answer_type,
+            audio_key=audio_key,
         )
 
     async def _load(self, job_id: int) -> ScoringJobModel | None:
