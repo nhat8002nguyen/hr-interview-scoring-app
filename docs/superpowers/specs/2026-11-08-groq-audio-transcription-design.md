@@ -1,10 +1,10 @@
 # Interview Scoring - Groq Audio Transcription Design
 
 **Date:** 2026-11-08
-**Status:** Approved for planning
+**Status:** Accepted
 **Repo:** private monorepo
-**Amends:** `2026-10-18-backend-design.md` (section 2 scope, section 9 audio enqueue, section 10 scoring pipeline)
-**Related:** `2026-10-18-api-contract-design.md`, `2026-10-18-hr-web-design.md`
+**Amends:** `2026-10-18-backend-design.md` (section 2 scope, section 9 audio enqueue, section 10 scoring pipeline); `2026-10-18-api-contract-design.md` (phase-1 audio deferral, import enqueue, scoring pipeline audio rules)
+**Related:** `2026-10-18-hr-web-design.md`, `2026-10-18-deployment-integration-design.md`
 
 ## 1. Goal
 
@@ -185,14 +185,14 @@ CI must not call the real Groq API.
 
 ## 5. Amendments to prior specs
 
-Relative to `2026-10-18-backend-design.md`:
+Relative to `2026-10-18-backend-design.md` and `2026-10-18-api-contract-design.md`:
 
 - Phase-1 "audio stored only / needs_a_person" is replaced for **new** audio by transcribe-then-score.
 - Section 9/10 enqueue rules change: audio uses `queued`, not `needs_a_person`.
 - `needs_a_person` remains a valid status for transcription exhaustion and for historical rows.
 - LLM adapter section gains a sibling transcription adapter; scoring protocol itself is unchanged.
 
-Where this document and the older backend design disagree on audio scoring, this document wins.
+Where this document and those older specs disagree on audio scoring, this document wins.
 
 ## 6. Traceability
 

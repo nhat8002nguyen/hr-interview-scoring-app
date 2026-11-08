@@ -26,9 +26,7 @@ class ScoringUnitOfWork(Protocol):
     ) -> None: ...
 
 
-ScoringUnitOfWorkFactory = Callable[
-    [], AbstractAsyncContextManager[ScoringUnitOfWork]
-]
+ScoringUnitOfWorkFactory = Callable[[], AbstractAsyncContextManager[ScoringUnitOfWork]]
 
 
 @dataclass(frozen=True, slots=True)

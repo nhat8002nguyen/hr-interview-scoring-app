@@ -620,7 +620,7 @@
         {
           "name": "Override score",
           "request": {
-            "description": "Overrides the audio answer, which is immediately eligible as `needs_a_person`. To override a scored text answer instead, point the URL at `{{answerId}}` after the scoring job reaches `scored`.",
+            "description": "Overrides an answer whose scoring job is `scored` or `needs_a_person` (for example after transcription exhaustion). Wait for `{{audioAnswerId}}` to reach an overridable status, or point the URL at `{{answerId}}` after a text job reaches `scored`.",
             "method": "PATCH",
             "header": [
               {

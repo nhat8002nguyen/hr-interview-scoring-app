@@ -5,6 +5,9 @@
 **API image:** `ghcr.io/nhat8002nguyen/talot-api:2d7726465e43c8c1b8911a6645281cd3e369f98b`
 **CI run:** https://github.com/nhat8002nguyen/talot-assessment/actions/runs/39188535569
 
+> Historical snapshot of production on this date.
+> Audio enqueue and scoring expectations below reflect phase-1 "store only" behavior and were superseded by `docs/superpowers/specs/2026-11-08-groq-audio-transcription-design.md`.
+
 ## Environment
 
 | Component | URL | Result |

@@ -251,4 +251,4 @@ A `409` duplicate email is shown inline.
 ## 14. Non-Goals (Phase 2)
 
 Everything listed in section 2.2 is out of scope for this spec.
-In particular, no audio transcription, no score-agreement report, and no dedicated "needs a person" list beyond the status shown in the job list.
+In particular, no client-side audio transcription (backend owns Groq transcription), no score-agreement report, and no dedicated "needs a person" list beyond the status shown in the job list.

@@ -28,8 +28,7 @@ def fail(message: str) -> NoReturn:
 def expect_status(response: httpx.Response, expected: int, label: str) -> None:
     if response.status_code != expected:
         fail(
-            f"{label}: expected HTTP {expected}, got {response.status_code}: "
-            f"{response.text[:500]}"
+            f"{label}: expected HTTP {expected}, got {response.status_code}: {response.text[:500]}"
         )
 
 
@@ -203,14 +202,10 @@ def main() -> int:
         expect_equal(len(detail["answers"]), 2, "candidate answer count")
 
         first_answer = next(
-            answer
-            for answer in detail["answers"]
-            if answer["question_id"] == first_question["id"]
+            answer for answer in detail["answers"] if answer["question_id"] == first_question["id"]
         )
         audio_answer = next(
-            answer
-            for answer in detail["answers"]
-            if answer["question_id"] == second_question["id"]
+            answer for answer in detail["answers"] if answer["question_id"] == second_question["id"]
         )
         text_scoring = wait_until_scored(
             client,

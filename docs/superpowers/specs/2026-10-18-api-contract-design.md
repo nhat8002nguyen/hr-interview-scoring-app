@@ -10,6 +10,9 @@
 
 > **Amended by `2026-10-19-hr-self-registration-and-tenancy-design.md`.**
 > That spec adds HR self-registration and per-account tenancy and is authoritative where it changes this document.
+>
+> **Amended by `2026-11-08-groq-audio-transcription-design.md`.**
+> That spec owns audio transcription and audio enqueue/scoring rules and is authoritative where it changes this document.
 
 ## 1. Goal
 
@@ -29,12 +32,11 @@ The product: an internal interview-scoring app where candidates answer six quest
 - Candidate area: open interview from a personal link, answer six questions one at a time (text or audio upload), receive immediate "answer arrived" confirmation, reload and resume at the same question.
 - HR area: JWT sign-in, view candidates for a role with each answer and its suggested score and reasoning, override a score with a required reason, view scoring-job status, retry failed jobs, import the data pack.
 - Backend: JSON API that owns data, business rules, and permissions; background scoring worker pool using a real LLM; PostgreSQL as both system of record and scoring queue.
-- Audio answers are accepted, stored, and visible to HR. Transcription/scoring of audio is deferred to phase 2.
+- Audio answers are accepted, stored, transcribed, scored, and visible to HR (see `2026-11-08-groq-audio-transcription-design.md`).
 
 ### 2.2 Phase 2 (out of scope, optional extras)
 
 - Score-agreement report vs `hr_reference_scores.csv`.
-- Transcribe and score the five audio-only answers.
 - A dedicated "needs a person" list with reasons.
 - Candidate list ordered to help HR decide who to read first.
 - Consent screen and microphone check in the candidate area.
@@ -475,8 +477,8 @@ Response `200` (updated answer shape). `override_reason` is required (non-empty)
   "questions_created": 6,
   "candidates_created": 18,
   "answers_imported": 35,
-  "scoring_jobs_queued": 30,
-  "audio_answers_needing_person": 5
+  "scoring_jobs_queued": 35,
+  "audio_answers_needing_person": 0
 }
 ```
 
@@ -496,7 +498,7 @@ Response `200` (updated answer shape). `override_reason` is required (non-empty)
 4. For each `answers/*.json`:
    - Resolve role by name.
    - Find-or-create the `candidate` by `external_ref = candidate_id` within the caller's `owner_id`; set `name`/`email` from `pipeline_log.csv` when present, otherwise fall back to a placeholder derived from `candidate_id`. Generate a `session_token`.
-   - Create the `answer` (`external_ref = answer_id`). If `transcript` is present: `answer_type=text`, enqueue `scoring_job(status=queued)`. If `audio_file` is present and `transcript` is null: `answer_type=audio`, store the `.m4a` under `audio/import/{candidate_id}/{answer_id}.m4a`, set `scoring_job(status=needs_a_person)`.
+   - Create the `answer` (`external_ref = answer_id`). If `transcript` is present: `answer_type=text`, enqueue `scoring_job(status=queued)`. If `audio_file` is present and `transcript` is null: `answer_type=audio`, store the `.m4a` under `audio/import/{candidate_id}/{answer_id}.m4a`, enqueue `scoring_job(status=queued)`.
 5. Return the summary above.
 
 Import is idempotent on `external_ref` per owner: re-importing the same pack as the same HR account does not duplicate questions, candidates, or answers.
@@ -529,23 +531,25 @@ All error responses use RFC 7807 problem details, matching the template:
 
 ## 10. Scoring Pipeline
 
-1. **Enqueue**: on answer submit (or import of a text answer), the `scoring_job` is created/reset with `status=queued`.
+1. **Enqueue**: on text or audio answer submit (and on import of either), the `scoring_job` is created/reset with `status=queued`.
 2. **Claim**: a worker in the pool runs `SELECT ... FROM scoring_jobs WHERE status='queued' ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1`, sets `claimed_at`, and marks it in-flight.
-3. **Score**: the worker builds a prompt from the question `prompt` + `grading_guide` (system) and the candidate `text` (user, delimited as untrusted data), calls the `ScoringLlmPort` (DeepSeek adapter).
-4. **Validate**: the adapter returns JSON that is strictly validated to `{score: int, reasoning: str}` with `1 <= score <= 4`. Anything else is rejected.
-5. **Store**: on success, set `suggested_score`, `suggested_reasoning`, `final_score=suggested_score`, `status=scored`, `scored_at=now`.
-6. **Failure**: on LLM/validation error, increment `attempt_count`. Below the max attempts, re-queue (backoff); at the max, set `status=failed` and `last_error`. A failed job is never shown as a score.
-7. **Audio (phase 1)**: audio-only answers are set to `needs_a_person` at import/submit time and are not sent to the LLM.
+3. **Transcribe (audio)**: when the answer is audio and `text` is blank, the worker transcribes via Groq, persists the transcript on `answers.text`, then continues. Details: `2026-11-08-groq-audio-transcription-design.md`.
+4. **Score**: the worker builds a prompt from the question `prompt` + `grading_guide` (system) and the candidate `text` (user, delimited as untrusted data), calls the `ScoringLlmPort` (DeepSeek adapter).
+5. **Validate**: the adapter returns JSON that is strictly validated to `{score: int, reasoning: str}` with `1 <= score <= 4`. Anything else is rejected.
+6. **Store**: on success, set `suggested_score`, `suggested_reasoning`, `final_score=suggested_score`, `status=scored`, `scored_at=now`.
+7. **Failure**: on LLM/validation error, increment `attempt_count`. Below the max attempts, re-queue (backoff); at the max, set `status=failed` and `last_error`. A failed job is never shown as a score.
+   Exhausted transcription failures terminate as `needs_a_person` with `last_error` and no score.
 
-Status transitions: `queued -> scored` or `queued -> failed`; `failed -> queued` (retry). Audio-only answers (phase 1) are created directly with `status=needs_a_person` and never enter the queue. `scored`/`needs_a_person` answers can receive an HR override that sets `final_score` + `override_reason` without changing `status`.
+Status transitions: `queued -> scored`, `queued -> failed`, or `queued -> needs_a_person` (transcription exhaustion); `failed -> queued` (retry). Retry stays `failed`-only. `scored`/`needs_a_person` answers can receive an HR override that sets `final_score` + `override_reason` without changing `status`.
 
 Prompt-injection safety: the system prompt instructs the model that the candidate text is untrusted data and must never be treated as instructions; the output is schema-validated so only a `score` and `reasoning` can be stored. An answer that instructs the scorer cannot change its own score.
 
 ## 11. Cross-Cutting Concerns
 
 - **CORS**: allow-list via `CORS_ORIGINS` env (the two FE origins).
-- **Config (env)**: `DATABASE_URL`, `JWT_SECRET`, `JWT_ALGORITHM`, `CANDIDATE_WEB_ORIGIN`, `CORS_ORIGINS`, `SCORING_WORKERS` (pool size), `SCORING_MAX_ATTEMPTS`, `MAX_ANSWER_SUBMISSIONS` (per-question submit cap, default 3), `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `AUDIO_STORAGE_DIR`.
+- **Config (env)**: `DATABASE_URL`, `JWT_SECRET`, `JWT_ALGORITHM`, `CANDIDATE_WEB_ORIGIN`, `CORS_ORIGINS`, `SCORING_WORKERS` (pool size), `SCORING_MAX_ATTEMPTS`, `SCORING_LEASE_TIMEOUT_SECONDS`, `MAX_ANSWER_SUBMISSIONS` (per-question submit cap, default 3), `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `GROQ_API_KEY`, `GROQ_MODEL`, `GROQ_BASE_URL`, `AUDIO_STORAGE_DIR`.
 - **LLM adapter**: `ScoringLlmPort` protocol with `DeepSeekLlm` implementation; alternate providers swap in without changing the worker. The test suite may substitute a fake.
+- **Transcription adapter**: `TranscriptionPort` with `GroqTranscription`; see `2026-11-08-groq-audio-transcription-design.md`.
 - **Audio storage**: `FileStorage` protocol with a local-filesystem adapter in phase 1.
 - **Background worker**: `asyncio` pool of `SCORING_WORKERS` tasks started in the FastAPI lifespan, stopped cleanly on shutdown (mirrors the template's `OutboxProcessor` lifecycle).
 
@@ -560,7 +564,7 @@ Prompt-injection safety: the system prompt instructs the model that the candidat
 | Failed job visible with retry, never shown as low score | `status=failed` + `last_error`; `POST /hr/scoring-jobs/{id}/retry`; failed jobs have no `final_score`. |
 | Prompt-injection cannot change the score | Untrusted-text delimiters + strict output schema validation. |
 | Typed data-pack answers can be loaded and scored | `POST /hr/import` enqueues text answers for scoring. |
-| Audio answer stored and visible to HR | `answer_type=audio` + `audio_key`; `GET /hr/answers/{id}/audio` streams it. |
+| Audio answer stored, transcribed, scored, and visible to HR | `answer_type=audio` + `audio_key`; worker persists transcript on `answers.text`; `GET /hr/answers/{id}/audio` streams playback. |
 | Rejected audio cannot overwrite accepted audio | Candidate audio keys include `content_hash`; at-cap changed uploads are rejected before save. |
 | HR import ignores the candidate submit cap | Import upserts with `max_submissions=None` (no `version < max_submissions` guard). |
 | App runs from README on a clean machine | `docker-compose.yml` boots Postgres + API; README documents setup/run/test (own spec section, delivered in repo). |
@@ -571,4 +575,4 @@ Prompt-injection safety: the system prompt instructs the model that the candidat
 
 - Backend: HTTP tests per endpoint covering auth (401/403), candidate isolation, resubmission idempotency (changed content re-queues; byte-identical content is a no-op), score-override reason requirement, failed-job retry, and import idempotency. Scoring worker tested with a fake `ScoringLlmPort` and with schema-validation cases (invalid score, missing field, injected instructions).
 - Frontend: candidate flow (open link, answer, resume, resubmit, confirmation) and HR flow (sign-in, role -> candidate -> override, retry) against the real API.
-- End-to-end: import the data pack, observe text answers reach `scored`, audio answers are `needs_a_person`, and a duplicate submission yields a single score.
+- End-to-end: import the data pack, observe text and audio answers reach `scored` (with fake or configured Groq/DeepSeek), and a duplicate submission yields a single score.
