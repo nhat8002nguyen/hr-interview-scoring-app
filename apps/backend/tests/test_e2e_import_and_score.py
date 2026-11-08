@@ -56,8 +56,8 @@ _POSTGRES_IMAGE = "postgres:18-alpine"
 # twice (A022 then A023, a retake). The answers table has a unique constraint on
 # (candidate_id, question_id), so the import merges those two records into one
 # row: the later record wins and the version is bumped. The summary still counts
-# every record (35 answers, 30 text jobs queued), but the database ends up with
-# 29 text answers and 5 audio answers.
+# every record (35 answers, 35 scoring jobs queued: 30 text + 5 audio), but the
+# database ends up with 29 text answers and 5 audio answers.
 _TEXT_ANSWER_ROWS = 29
 _AUDIO_ANSWER_ROWS = 5
 
@@ -94,11 +94,9 @@ class FakeLlm:
         return LlmScore(3, "meets the bar")
 
 
-class _UnusedTranscription:
-    """Audio rows stay needs_a_person until enqueue changes, so this is not called."""
-
+class FakeTranscription:
     async def transcribe(self, data: bytes, *, filename: str, language: str = "en") -> str:
-        raise AssertionError("e2e audio jobs are not queued for transcription yet")
+        return "transcribed audio answer"
 
 
 def _docker(args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -248,8 +246,8 @@ async def test_import_and_score_end_to_end(
         assert summary.questions_created == 6
         assert summary.candidates_created == 18
         assert summary.answers_imported == 35
-        assert summary.scoring_jobs_queued == 30
-        assert summary.audio_answers_needing_person == 5
+        assert summary.scoring_jobs_queued == 35
+        assert summary.audio_answers_needing_person == 0
 
         # Re-importing the same pack must not overcount the merged retake
         # (C2052 answered Q3 twice: A022 then A023). The surviving row keeps
@@ -267,7 +265,7 @@ async def test_import_and_score_end_to_end(
         worker = ScoringWorker(
             lambda: SqlAlchemyScoringUnitOfWork(session_factory),
             FakeLlm(),
-            transcription=_UnusedTranscription(),
+            transcription=FakeTranscription(),
             file_storage=file_storage,
             max_attempts=3,
             poll_interval_seconds=0,
@@ -293,8 +291,8 @@ async def test_import_and_score_end_to_end(
         assert len(audio_jobs) == _AUDIO_ANSWER_ROWS
         assert all(job.status == "scored" for job in text_jobs)
         assert all(job.suggested_score == 3 and job.final_score == 3 for job in text_jobs)
-        assert all(job.status == "needs_a_person" for job in audio_jobs)
-        assert all(job.final_score is None for job in audio_jobs)
+        assert all(job.status == "scored" for job in audio_jobs)
+        assert all(job.suggested_score == 3 and job.final_score == 3 for job in audio_jobs)
         assert all(job.status != "failed" for job in jobs)
 
         # A duplicate byte-identical submission must be a no-op: the answer keeps
